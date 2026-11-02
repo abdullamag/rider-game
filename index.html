@@ -820,7 +820,8 @@ function lockOf(k,b){
 }
 function menuItems(b){
   const it=[];
-  if(b.type==='hall') for(const k in BAL.req) if(BAL.req[k].build) it.push([k,BAL[k].cost]);
+  // лагерь один на всю игру: заказан или построен — карточка пропадает
+  if(b.type==='hall') for(const k in BAL.req) if(BAL.req[k].build&&!(k==='camp'&&buildings.some(o=>o.type==='camp'))) it.push([k,BAL[k].cost]);
   for(const k in BAL.req) if(BAL.req[k].at===b.type) it.push([k,BAL.trainCost]);
   const lv=b.level||1;
   if(b.type==='hall'){ if(walls.level>=1&&BAL.wall.up[walls.level+1]) it.push(['wall',BAL.wall.up[walls.level+1].cost]); if(BAL.hallUp[lv+1]) it.push(['upgrade',BAL.hallUp[lv+1].cost]); }
