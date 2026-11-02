@@ -1753,13 +1753,13 @@ function drawTutArrow(cx,base){
   const st=TUT[tut.step]; if(!st.at) return; const wx=st.at(); if(wx==null) return;
   const x=Math.round(wx-cx), bob=Math.round(Math.sin(anim*5)*2);
   ctx.fillStyle='#ffd88a';
-  if(x>8&&x<VW-8){
+  if(x>VW*0.15&&x<VW*0.85){
     const y=base-62+bob;
     for(let i=0;i<5;i++) ctx.fillRect(x-4+i,y+i,9-i*2,1);
     ctx.fillRect(x-1,y-6,3,6);
     ctx.fillStyle='#1a1018'; ctx.fillRect(x-5,y-1,11,1);
   } else {
-    const dir=x<=8?-1:1, ex=dir<0?14+bob:VW-15-bob, y=Math.round(VH*0.42);
+    const dir=x<=VW*0.15?-1:1, m=Math.round(VW*0.15), ex=dir<0?m+bob:VW-1-m-bob, y=Math.round(VH*0.42);
     ctx.fillStyle='#1a1018'; for(let i=-1;i<8;i++){ const h=Math.max(1,15-i*2); ctx.fillRect(ex+dir*i,y-((h+2)>>1),1,h+2); } ctx.fillRect(dir<0?ex+1:ex-9,y-3,9,6);
     ctx.fillStyle='#ffd88a'; for(let i=0;i<7;i++){ const h=13-i*2; ctx.fillRect(ex+dir*i,y-(h>>1),1,h); } ctx.fillRect(dir<0?ex+1:ex-8,y-2,8,4);
   }
