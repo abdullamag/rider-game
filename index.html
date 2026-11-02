@@ -1,4 +1,4 @@
-<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><link rel="apple-touch-icon" href="apple-touch-icon.png"><link rel="icon" type="image/png" href="favicon.png"><meta name="apple-mobile-web-app-title" content="Всадник"><title>Всадник</title></head><body><title>Король и лагерь</title>
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><link rel="apple-touch-icon" href="apple-touch-icon.png"><link rel="icon" type="image/png" href="favicon.png"><meta name="apple-mobile-web-app-title" content="Всадник"><title>Всадник</title></head><body>
 <style>
   html,body{margin:0;height:100%;background:#1b1a26;overflow:hidden;font-family:-apple-system,"Helvetica Neue",Arial,sans-serif;color:#f4ece0;
     -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:none;overscroll-behavior:none}
@@ -27,6 +27,20 @@
   #place{position:absolute;right:calc(18px + env(safe-area-inset-right,0px));bottom:18px;display:none;gap:12px}
   #place .ubtn{position:relative;width:64px;height:64px;font-size:28px;color:#fff3e0}
   #pOk.off{opacity:.35}
+  #tut{position:absolute;left:50%;top:calc(10px + env(safe-area-inset-top,0px));transform:translateX(-50%);display:none;align-items:center;gap:12px;
+    max-width:min(560px,74%);background:rgba(24,18,34,.86);border:2px solid rgba(255,214,140,.55);border-radius:14px;padding:9px 10px 9px 14px;
+    font-size:15px;line-height:1.3;color:#fff3e0;box-shadow:0 4px 18px rgba(0,0,0,.35);transition:opacity .3s}
+  #tut b{color:#ffd88a;font-weight:600}
+  #tutN{flex:none;font-size:12px;color:rgba(255,236,200,.6)}
+  #tutSkip{flex:none;border:1px solid rgba(255,236,200,.45);background:rgba(60,46,70,.7);color:#fff3e0;border-radius:10px;padding:6px 10px;font-size:13px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+  #tutHand{position:absolute;width:38px;height:38px;margin:-19px 0 0 -19px;border-radius:50%;background:rgba(255,240,225,.5);border:2px solid rgba(255,240,225,.85);
+    pointer-events:none;display:none;box-shadow:0 0 0 6px rgba(255,240,225,.12)}
+  #tutHand.drag{left:20%;top:68%;animation:tDrag 2.2s ease-in-out infinite}
+  #tutHand.down{left:80%;top:42%;animation:tDown 1.6s ease-in infinite}
+  #tutHand.up{left:80%;top:72%;animation:tUp 1.6s ease-in infinite}
+  @keyframes tDrag{0%,12%{transform:translateX(0);opacity:0}20%{opacity:1}55%{transform:translateX(70px);opacity:1}80%,100%{transform:translateX(70px);opacity:0}}
+  @keyframes tDown{0%{transform:translateY(0);opacity:0}15%{opacity:1}70%{transform:translateY(90px);opacity:1}100%{transform:translateY(110px);opacity:0}}
+  @keyframes tUp{0%{transform:translateY(0);opacity:0}15%{opacity:1}70%{transform:translateY(-90px);opacity:1}100%{transform:translateY(-110px);opacity:0}}
 </style>
 
 <div id="game">
@@ -34,6 +48,8 @@
   <div id="stick" class="idle"><div id="knob"></div></div>
   <button id="bOpen" class="ubtn" style="display:none"><canvas width="20" height="20" style="width:40px;height:40px"></canvas></button>
   <div id="menu"></div>
+  <div id="tutHand"></div>
+  <div id="tut"><span id="tutN"></span><span id="tutT"></span><button id="tutSkip">Пропустить</button></div>
   <div id="place"><button id="pNo" class="ubtn">✕</button><button id="pOk" class="ubtn">✓</button></div>
 </div>
 
@@ -664,7 +680,7 @@ addEventListener('keydown',e=>{
   }
   keys[e.code]=true;
   if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault();
-  if(e.code==='KeyR'){ if(e.shiftKey){ try{ localStorage.removeItem(SAVE_KEY); }catch(_){} resetting=true; if(cloudRef) cloudRef.delete().catch(()=>{}).finally(()=>location.reload()); else location.reload(); return; } location.reload(); }
+  if(e.code==='KeyR'){ if(e.shiftKey){ try{ localStorage.removeItem(SAVE_KEY); localStorage.removeItem('rg_tut'); }catch(_){} resetting=true; if(cloudRef) cloudRef.delete().catch(()=>{}).finally(()=>location.reload()); else location.reload(); return; } location.reload(); }
 });
 addEventListener('keyup',e=>{ keys[e.code]=false; });
 addEventListener('blur',()=>{ for(const k in keys) keys[k]=false; endStickAll(); swipe.id=null; });
@@ -674,7 +690,7 @@ const swipe={id:null,x:0,y:0,done:false};
 const STICK_R=48;
 function localPt(e){ return PORTRAIT?{x:e.clientY,y:LAY_IW-e.clientX}:{x:e.clientX,y:e.clientY}; }
 game.addEventListener('pointerdown',e=>{
-  if(e.target.closest&&e.target.closest('.ubtn,#menu')) return;
+  if(e.target.closest&&e.target.closest('.ubtn,#menu,#tutSkip')) return;
   const p=localPt(e);
   if(p.x>GL*0.62){
     if(swipe.id===null){ swipe.id=e.pointerId; swipe.x=p.x; swipe.y=p.y; swipe.done=false; }
@@ -812,7 +828,7 @@ function menuItems(b){
   return it;
 }
 function openMenu(b){
-  uiMode='menu'; uiFor=b; menuEl.innerHTML='';
+  uiMode='menu'; uiFor=b; menuEl.innerHTML=''; if(b.type==='hall') tut.menu=true;
   for(const [k,cost] of menuItems(b)){
     const card=document.createElement('div'); card.className='card'; card.dataset.kind=k; card.dataset.cost=cost;
     const ic=iconCanvas(k,cost); ic.style.width='72px'; ic.style.height='96px';
@@ -969,7 +985,7 @@ function throwCoin(){
     for(const tr of trees){ if(tr.marked||tr.grow<1) continue; const d=Math.abs(tr.x*T+4-hx); if(d<bd){bd=d;best=tr;} }
     if(best) target={type:'tree',tree:best};
   }
-  purse--; actT=8;
+  purse--; actT=8; tut.thrown++;
   const c={x:handX(),y:handY(),vx:0,vy:0,ground:false,age:0,flight:null};
   if(target){
     const tx=target.type==='tree'?target.tree.x*T+4:target.type==='sheep'?target.sheep.x:target.type==='field'?(fieldL(target.mill)+fieldR(target.mill))/2:h.x;
@@ -1436,6 +1452,7 @@ function finishBuilding(b){
   else if(b.type==='barn'){ addSheep(b,true); addSheep(b,true); }
 }
 function stepPhysics(){
+  if(tick%10===0) tutTick();
   if(tick%30===0) tickTimers();
   tick++;
   dayClock+=1/60;
@@ -1697,6 +1714,56 @@ function drawHourglass(x,y){
   px(-2,1,5,1,'#1a1018'); px(-1,2,3,1,'#1a1018'); px(0,3,1,2,'#1a1018'); px(-1,5,3,1,'#1a1018'); px(-2,6,5,2,'#1a1018');
   px(-1,1,3,1,'#e8d27a'); if(!f) px(0,2,1,1,'#e8d27a'); px(0,4,1,1,'#e8d27a'); px(-1,7,3,1,'#e8d27a'); if(f) px(0,6,1,1,'#e8d27a');
 }
+// ---------- обучение: 6 шагов, идут сами по мере действий; кнопка «Пропустить» убирает насовсем ----------
+const tut={step:0,off:false,thrown:0,menu:false,x0:null,doneT:0};
+try{ const t=JSON.parse(localStorage.getItem('rg_tut')||'null'); if(t){ tut.step=t.step|0; tut.off=!!t.off; } }catch(_){}
+function tutStore(){ try{ localStorage.setItem('rg_tut',JSON.stringify({step:tut.step,off:tut.off})); }catch(_){} }
+const anyWorker=()=>people.some(q=>q.state!=='vagrant');
+const hallStarted=()=>hall().stage!=='stone';
+function nearestTree(){ let best=null,bd=1e9; for(const t of trees){ if(t.marked||t.grow<1) continue; const d=Math.abs(t.x*T+4-pcx()); if(d<bd){bd=d;best=t;} } return best?best.x*T+4:null; }
+function nearestCamp(){ let best=null,bd=1e9; for(const c of CAMPS){ if(!people.some(q=>q.state==='vagrant'&&q.camp===c)) continue; const d=Math.abs(c.x*T-pcx()); if(d<bd){bd=d;best=c;} } return best?best.x*T:null; }
+const TUT=[
+  {t:'Коснись <b>левой части</b> экрана и веди палец в сторону — всадник поедет. Чем дальше палец, тем быстрее.', hand:'drag',
+   done:()=>(tut.x0!==null&&Math.abs(P.x-tut.x0)>120)||anyWorker()||hallStarted()},
+  {t:'Смахни <b>вниз</b> на правой половине экрана — бросишь монету. Твои монеты — точки слева вверху.', hand:'down',
+   done:()=>tut.thrown>0||anyWorker()||hallStarted()},
+  {t:'Скачи к <b>шатрам бродяг</b> и брось монету рядом с бродягой — он станет твоим рабочим.', at:nearestCamp,
+   done:()=>anyWorker()},
+  {t:'Вернись к <b>камням</b> и брось в них <b>3 монеты</b> — на этом месте начнётся стройка ратуши.', at:()=>hall().x,
+   done:()=>hallStarted()},
+  {t:'Брось монету в <b>дерево</b> — рабочий срубит его и отнесёт брёвна на стройку.', at:nearestTree,
+   done:()=>trees.some(t=>t.marked)||hall().stage==='done'||buildings.length>1},
+  {t:'Когда ратуша готова, встань рядом и нажми <b>кнопку справа внизу</b> — откроется меню. Для начала построй <b>лагерь</b>. Смахни <b>вверх</b> у ратуши — заберёшь монету из казны.', at:()=>hall().x,
+   done:()=>tut.menu||buildings.some(b=>b.type!=='hall'&&!b.type.endsWith('up'))},
+];
+const tutEl=document.getElementById('tut'), tutT=document.getElementById('tutT'), tutN=document.getElementById('tutN'), tutHand=document.getElementById('tutHand');
+tap(document.getElementById('tutSkip'),()=>{ tut.off=true; tutStore(); tutEl.style.display='none'; tutHand.style.display='none'; });
+let tutShown=-1;
+function tutTick(){
+  if(tut.off) return;
+  if(tut.x0===null) tut.x0=P.x;
+  while(tut.step<TUT.length&&TUT[tut.step].done()){ tut.step++; tutStore(); if(tut.step<TUT.length) sparkle(pcx(),P.y-6,'#ffe08a',10); }
+  if(tut.step>=TUT.length){ tut.off=true; tutStore(); tutEl.style.display='none'; tutHand.style.display='none'; return; }
+  const st=TUT[tut.step], hide=uiMode!=='none';
+  if(tutShown!==tut.step){ tutShown=tut.step; tutT.innerHTML=st.t; tutN.textContent=(tut.step+1)+'/'+TUT.length; tutHand.className=st.hand||''; }
+  tutEl.style.display=hide?'none':'flex'; tutHand.style.display=(!hide&&st.hand)?'block':'none';
+}
+function drawTutArrow(cx,base){
+  if(tut.off||tut.step>=TUT.length||uiMode!=='none') return;
+  const st=TUT[tut.step]; if(!st.at) return; const wx=st.at(); if(wx==null) return;
+  const x=Math.round(wx-cx), bob=Math.round(Math.sin(anim*5)*2);
+  ctx.fillStyle='#ffd88a';
+  if(x>8&&x<VW-8){
+    const y=base-62+bob;
+    for(let i=0;i<5;i++) ctx.fillRect(x-4+i,y+i,9-i*2,1);
+    ctx.fillRect(x-1,y-6,3,6);
+    ctx.fillStyle='#1a1018'; ctx.fillRect(x-5,y-1,11,1);
+  } else {
+    const dir=x<=8?-1:1, ex=dir<0?14+bob:VW-15-bob, y=Math.round(VH*0.42);
+    ctx.fillStyle='#1a1018'; for(let i=-1;i<8;i++){ const h=Math.max(1,15-i*2); ctx.fillRect(ex+dir*i,y-((h+2)>>1),1,h+2); } ctx.fillRect(dir<0?ex+1:ex-9,y-3,9,6);
+    ctx.fillStyle='#ffd88a'; for(let i=0;i<7;i++){ const h=13-i*2; ctx.fillRect(ex+dir*i,y-(h>>1),1,h); } ctx.fillRect(dir<0?ex+1:ex-8,y-2,8,4);
+  }
+}
 function drawWalls(cx,base){
   if(walls.level<1) return;
   for(const side of [-1,1]){
@@ -1897,6 +1964,7 @@ function render(){
   const vg=ctx.createRadialGradient(VW/2,VH/2,VH*0.45,VW/2,VH/2,VW*0.75);
   vg.addColorStop(0,'rgba(20,10,30,0)'); vg.addColorStop(1,`rgba(20,10,30,${0.3+0.2*dk})`);
   ctx.fillStyle=vg; ctx.fillRect(0,0,VW,VH);
+  drawTutArrow(Math.round(camX),GSY);
   for(let i=0;i<COIN_MAX;i++) iconCoin(6+i*6,6,i<purse);
   // индикатор суток: полоска 10 минут (день → ночь → рассвет), бегунок — сейчас
   { const bx=6+COIN_MAX*6+8, by=7, bw=54, t=dayClock%BAL.dayLen;
