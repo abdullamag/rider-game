@@ -131,6 +131,7 @@ function placeStickIdle(){
   stickEl.style.left=(Math.max(76,GL*0.11))+'px';
   stickEl.style.top=(GS-Math.max(76,GS*0.22))+'px';
 }
+const TARGET_VH=290;
 function layout(){
   const vv=window.visualViewport;
   const iw=Math.round(vv?vv.width:innerWidth), ih=Math.round(vv?vv.height:innerHeight);
@@ -139,7 +140,8 @@ function layout(){
   game.style.width=GL+'px'; game.style.height=GS+'px';
   game.style.transform=PORTRAIT?`translate(${iw}px,0) rotate(90deg)`:'none';
   const dpr=Math.min(window.devicePixelRatio||1,3);
-  DS=Math.max(1,Math.round(GS*dpr/200));
+  // целевая высота мира в пикселях (было 200); больше — мельче пиксель и больше деталей
+  DS=Math.max(1,Math.round(GS*dpr/TARGET_VH));
   VH=Math.ceil(GS*dpr/DS); VW=Math.ceil(GL*dpr/DS);
   cv.width=VW; cv.height=VH; snap.width=VW; snap.height=VH;
   disp.width=Math.round(GL*dpr); disp.height=Math.round(GS*dpr);
