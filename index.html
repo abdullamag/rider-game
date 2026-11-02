@@ -1449,7 +1449,15 @@ function tickTimers(){
   const now=Date.now();
   for(const b of buildings.slice()){
     if(b.stage!=='building'||!isTimed(b)) continue;
-    if(!b.t0){ const [k,lv]=upKey(b); b.t0=now; b.tDur=(BAL.upTime[k]&&BAL.upTime[k][lv])||60e3; }
+    const bd=b.builder;
+    if(!(bd&&people.includes(bd)&&bd.task==='build'&&bd.dest===b)){
+      b.builder=null;
+      const free=q=>(q.task==='follow'||q.task==='hunt')&&!q.coin&&!q.logs&&!q.scaff;
+      const near=a=>a.sort((u,v)=>Math.abs(u.x-b.x)-Math.abs(v.x-b.x))[0];
+      const pick=near(people.filter(q=>q.state==='carpenter'&&free(q)))||near(people.filter(q=>q.state==='worker'&&free(q)));
+      if(pick){ abortTask(pick); pick.task='build'; pick.dest=b; b.builder=pick; }
+    }
+    if(!b.t0){ if(!b.builder||Math.abs(b.builder.x-b.x)>30) continue; const [k,lv]=upKey(b); b.t0=now; b.tDur=(BAL.upTime[k]&&BAL.upTime[k][lv])||60e3; }
     b.progress=Math.min(1,(now-b.t0)/b.tDur);
     if(b.progress>=1) finishBuilding(b);
   }
@@ -1647,6 +1655,7 @@ function drawBuilding(b,cx,base){
   }
   if(b.type.endsWith('up')&&b.type!=='wallup'){
     const S_=b.type==='hallup'?SPR.hall:SPR[b.of.type], hw=S_.width, hh=S_.height, x0=x-Math.floor(hw/2), y0=base-hh+1;
+    if(b.stage==='building'){ ctx.fillStyle='#1a1018'; ctx.fillRect(x-16,y0-35,32,4); ctx.fillStyle='#bfe0ff'; ctx.fillRect(x-15,y0-34,Math.round(30*b.progress),2); drawHourglass(x,y0-44); return; }
     ctx.fillStyle='#6a4a2a';
     for(const sx of [x0-2,x0+Math.floor(hw/3),x0+Math.floor(hw*2/3),x0+hw]) ctx.fillRect(sx,y0+10,2,hh-10);
     ctx.fillRect(x0-3,y0+22,hw+6,1); ctx.fillRect(x0-3,y0+hh-14,hw+6,1);
@@ -1661,6 +1670,18 @@ function drawBuilding(b,cx,base){
     return;
   }
   const spr=SPR[b.type], hw=spr.width, hh=spr.height, x0=x-Math.floor(hw/2), y0=base-hh+1;
+  const upg=b.stage==='done'&&buildings.find(o=>o.stage==='building'&&(o.type==='hallup'?b===buildings[0]:o.of===b));
+  if(upg){
+    const a=0.7+0.2*Math.sin(anim*3);
+    ctx.globalAlpha=0.3; ctx.drawImage(spr,x0,y0); ctx.globalAlpha=1;
+    const bh=Math.round(hh*upg.progress); if(bh>0) ctx.drawImage(spr,0,hh-bh,hw,bh,x0,y0+hh-bh,hw,bh);
+    dashedBox(x0,y0,hw,hh,`rgba(190,225,255,${a})`);
+    ctx.fillStyle='#6a4a2a';
+    for(const sx of [x0,x0+Math.floor(hw/2),x0+hw-2]) ctx.fillRect(sx,y0+Math.round(hh*0.25),2,Math.round(hh*0.75));
+    ctx.fillRect(x0-1,y0+Math.round(hh*0.5),hw+2,1); ctx.fillRect(x0-1,y0+hh-12,hw+2,1);
+    if(b.type==='hall'&&Math.abs(b.x-pcx())<70){ iconCoin(x-10,y0-26); pxText(String(b.bank),x-3,y0-26,'#fff2d8'); }
+    return;
+  }
   if(b.stage==='done'){
     if(b.type==='camp'||b.type==='tower'){ const lvl=b.level||1; for(let i=0;i<3;i++){ ctx.fillStyle=i<lvl?'#e8c050':'#3a3040'; ctx.fillRect(x-4+i*3,y0+(b.type==='tower'?18:hh-30),2,2); } }
     if(b.type==='mill') drawField(b,cx,base);
@@ -2029,7 +2050,7 @@ function loadGame(d){
     logs=d.logs.map(x=>({x,taken:null}));
     coins=d.coins.map(a=>({x:a[0],y:GY*T-2,vx:0,vy:0,ground:true,age:200,flight:null,bounty:!!a[1],claim:null}));
     rabbits=[]; for(const a of d.rabbits){ spawnRabbit(a[0]); rabbits[rabbits.length-1].home=a[1]; }
-    buildings=d.buildings.map(b=>Object.assign({},b,{incoming:0,glow:0,scaffolder:null,archer:null,farmer:null,out:false,harvester:null,reaping:false}));
+    buildings=d.buildings.map(b=>Object.assign({},b,{incoming:0,glow:0,builder:null,scaffolder:null,archer:null,farmer:null,out:false,harvester:null,reaping:false}));
     for(const b of buildings){ if(b.of>=0&&buildings[b.of]) b.of=buildings[b.of]; else delete b.of; if(b.pasture===null) delete b.pasture; }
     walls=d.walls&&d.walls.level!=null?{level:d.walls.level,hp:(d.walls.hp||[0,0]).slice()}:{level:0,hp:[0,0]};
     if(walls.level<1&&buildings[0]&&buildings[0].stage==='done') setWallLevel(1);
