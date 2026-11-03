@@ -77,6 +77,8 @@ const BAL={
   sheepCoins:3, sheepMin:3, lambEvery:6, lambGrow:3, pasture:[20,330],
   huntTimeout:900,
   treesPerDay:2, forestMin:20, forestRefill:2,
+  // медведь: первый на 3-и сутки, дальше раз в 2–3 суток; здоровье растёт с каждым
+  bear:{first:3, every:[2,3], hp:14, hpStep:4, hpMax:40, speed:1.15, hitEvery:30, wallDmg:1, bldHp:40, hallHp:80, alert:340, chase:90, spook:44, loot:4},
   // реальное время прокачки (мс), отсчёт идёт с момента, когда принесли все брёвна; идёт и при закрытой игре
   upTime:{hall:[0,0,3*3600e3,8*3600e3], wall:[0,0,3600e3,4*3600e3], camp:[0,0,45*60e3,3*3600e3], tower:[0,0,20*60e3,90*60e3], barn:[0,0,40*60e3,2*3600e3], mill:[0,0,3600e3,3*3600e3]},
   wall:{hp:[0,100,250,500], up:[null,null,{cost:4,need:4},{cost:8,need:6}]},
@@ -920,7 +922,7 @@ function trainee(){
 function nearMenuBuilding(){
   let best=null,bd=1e9;
   for(const b of buildings){
-    if(b.stage!=='done'||!['hall','camp','tower','barn','mill'].includes(b.type)) continue;
+    if(b.stage!=='done'||!['hall','camp','tower','barn','mill'].includes(b.type)||underUp(b)) continue;
     const cx0=b.type==='mill'?b.x-53:b.x, lim=b.type==='mill'?40:b.type==='tower'?30:50, d=Math.abs(cx0-pcx());
     if(d<lim&&d<bd){bd=d;best=b;}
   }
@@ -977,7 +979,7 @@ function coinToPlayer(x,y){
   if(purse+incomingPurse()<COIN_MAX) coins.push({x,y,vx:0,vy:0,ground:false,age:0,flight:{sx:x,sy:y,tx:pcx(),ty:handY(),t:0,dur:20,target:{type:'purse'}}});
   else dropCoin(x,y,(rnd()-0.5),-1.5);
 }
-function dropCoin(x,y,vx,vy,bounty=true){ coins.push({x,y,vx,vy,ground:false,age:0,flight:null,bounty,claim:null}); }
+function dropCoin(x,y,vx,vy,bounty=true,loot=false){ coins.push({x,y,vx,vy,ground:false,age:0,flight:null,bounty,loot,claim:null}); }
 function throwCoin(){
   if(purse<=0){ actT=6; return; }
   const hx=pcx(), h=hall();
@@ -1077,7 +1079,8 @@ function chooseTask(p){
   const free=trees.find(t=>t.marked&&!t.worker);
   if(free){ free.worker=p; p.tree=free; p.task='chop'; return; }
   // 4) стройка
-  const bb=buildings.find(b=>b.stage==='building'&&!isTimed(b));
+  const noCarp=!people.some(q=>q.state==='carpenter');
+  const bb=buildings.find(b=>b.stage==='building'&&!isTimed(b)&&(!b.ruin||p.state==='carpenter'||noCarp));
   if(bb){ p.dest=bb; p.task='build'; return; }
   if(p.state==='worker'){
     // 5) монеты с добычи — по одной
@@ -1110,6 +1113,7 @@ function stepWorker(p){
   switch(p.task){
     case 'train':{
       const b=p.dest; goal=b.x;
+      if(!b||b.stage!=='done'||underUp(b)){ p.task='follow'; p.trainT=0; break; }
       if(Math.abs(p.x-goal)<3){ goal=null; p.trainT++;
         if(p.trainT>=BAL.trainTicks){ p.state=p.trainTo; p.task=p.state==='archer'?'roam':p.state==='farmer'?'farm':p.state==='fisher'?'fish':'follow'; p.shirt={archer:'#3f6a3a',carpenter:'#8a5a2a',farmer:'#9a8a4a',fisher:'#3a6a8a'}[p.state]; sparkle(p.x,GY*T-20,'#bfe0ff',14); p.trainTo=null; } }
       break;
@@ -1146,6 +1150,15 @@ function stepWorker(p){
       goal=tr.x*T+4-(p.x<tr.x*T+4?10:-10);
       if(Math.abs(p.x-goal)<2){ goal=null; p.face=tr.x*T+4>p.x?1:-1;
         if(p.act===0){ p.act=R.chop; tr.hp--; tr.sh=8; spawnChips(tr.x*T+4,GY*T-12,'#7a5638',4); if(tr.hp<=0) fellTree(tr,p); } }
+      break;
+    }
+    case 'wallfix':{
+      const side=p.side===0?-1:1, max=BAL.wall.hp[walls.level]||0;
+      goal=wallX(side)-side*8;
+      if(Math.abs(p.x-goal)<3){ goal=null; p.face=side;
+        if(p.act===0){ p.act=24; spawnChips(wallX(side),GY*T-10-rnd()*12,'#c9a46a',2); }
+        walls.hp[p.side]=Math.min(max,walls.hp[p.side]+max/1200);
+        if(walls.hp[p.side]>=max) p.task='follow'; }
       break;
     }
     case 'build':{
@@ -1216,6 +1229,7 @@ function archerTop(a){ return a.tower?GY*T-56:GY*T-14; }
 function stepArcher(a){
   if(a.reload>0) a.reload--;
   if(a.act>0) a.act--;
+  if(a.tower&&(underUp(a.tower)||a.tower.stage!=='done')){ a.tower.archer=null; a.tower=null; a.task='roam'; }
   if(a.tower){
     a.x=a.tower.x; a.vx=0;
     if(a.pouch>0&&Math.abs(pcx()-a.x)<26){ while(a.pouch>0){ a.pouch--; coinToPlayer(a.x,GY*T-56); } }
@@ -1225,7 +1239,7 @@ function stepArcher(a){
     return;
   }
   // свободная башня — забраться
-  const tw=buildings.find(b=>b.type==='tower'&&b.stage==='done'&&!b.archer);
+  const tw=buildings.find(b=>b.type==='tower'&&b.stage==='done'&&!b.archer&&!underUp(b));
   if(tw){ tw.archer=a; a.task='toTower'; a.dest=tw; }
   if(a.task==='toTower'){
     const b=a.dest; if(!b||b.archer!==a){ a.task='roam'; }
@@ -1243,7 +1257,7 @@ function stepArcher(a){
   if(a.pouch<BAL.archer.pouch&&!(a.coinWait>0)){
     const c=coins.find(k=>k.bounty&&k.ground&&(!k.claim||k.claim===a)&&Math.abs(k.x-a.x)<90);
     if(c&&c.claim===a){ c.claimT=(c.claimT||0)+1; if(c.claimT>900){ c.claim=null; c.claimT=0; a.coinWait=600; } }
-    if(c){ c.claim=a; goal=c.x; if(Math.abs(a.x-c.x)<6){ coins.splice(coins.indexOf(c),1); archerGain(a); goal=null; } }
+    if(c){ c.claim=a; goal=c.x; if(Math.abs(a.x-c.x)<6){ coins.splice(coins.indexOf(c),1); if(c.loot) archerGain(a); else a.pouch++; goal=null; } }
   }
   if(goal===null){
     // своя добыча: ближайший кролик на всей карте, за которым не идёт другой лучник
@@ -1276,12 +1290,14 @@ function findTarget(a,range,birdsToo){
   const ay=archerTop(a);
   for(const r of rabbits){ if(r.dead) continue; const d=Math.abs(r.x-a.x); if(d<bd&&Math.hypot(r.x-a.x,GY*T-ay)<range){bd=d;best={kind:'rabbit',ref:r,x:r.x};} }
   if(birdsToo) for(const b of birds){ if(b.dead) continue; const d=Math.hypot(b.x-a.x,b.y-ay); if(d<bd){bd=d;best={kind:'bird',ref:b,x:b.x};} }
+  if(bear&&bear.state!=='dead'&&bear.state!=='leave'&&Math.abs(bear.x-a.x)<range) best={kind:'bear',ref:bear,x:bear.x};
   return best;
 }
 function shoot(a,tgt){
   const sx=a.x+a.face*4, sy=archerTop(a)-8;
   const r=tgt.ref;
-  const tx=tgt.kind==='bird'?r.x+r.vx*20:(tgt.kind==='worker'?r.x:r.x), ty=tgt.kind==='bird'?r.y:GY*T-4-(tgt.kind==='worker'?10:0);
+  let tx=tgt.kind==='bird'?r.x+r.vx*20:(tgt.kind==='worker'?r.x:r.x), ty=tgt.kind==='bird'?r.y:GY*T-4-(tgt.kind==='worker'?10:tgt.kind==='bear'?8:0);
+  if(tgt.kind==='bear'&&r.mv) tx+=r.face*BAL.bear.speed*Math.max(10,Math.hypot(tx-sx,ty-sy)/3.2);
   const dist=Math.hypot(tx-sx,ty-sy);
   arrows.push({sx,sy,tx,ty,x:sx,y:sy,t:0,dur:Math.max(10,dist/3.2),tgt,shooter:a,arc:Math.min(18,dist*0.12)});
   a.reload=BAL.archer.reload; a.act=12;
@@ -1297,6 +1313,7 @@ function updArrows(){
       if(t.kind==='rabbit'&&!r.dead&&Math.abs(r.x-ar.tx)<8) killRabbit(r,ar.shooter);
       else if(t.kind==='bird'&&!r.dead&&Math.hypot(r.x-ar.tx,r.y-ar.ty)<10) killBird(r,ar.shooter);
       else if(t.kind==='worker'&&people.indexOf(r)>=0) killWorker(r);
+      else if(t.kind==='bear'&&r===bear&&r.state!=='dead'&&Math.abs(r.x-ar.tx)<16){ r.hp--; r.killer=ar.shooter; spawnChips(r.x,GY*T-10,'#c84a3a',4); }
       else spawnChips(ar.tx,GY*T-2,'#8a6a3a',2);
     }
   }
@@ -1310,7 +1327,7 @@ function lootCoins(n,x,y,shooter){
       coins.push({x,y,vx:0,vy:0,ground:false,age:0,flight:{sx:x,sy:y,tx:shooter.tower.x,ty:GY*T-62,t:0,dur:30,target:{type:'pouch',a:shooter}}});
       continue;
     }
-    dropCoin(x,y,(i%2?0.6:-0.6),-1.6);
+    dropCoin(x,y,(i%2?0.6:-0.6),-1.6,true,true);
   }
 }
 function killRabbit(r,shooter){
@@ -1385,6 +1402,7 @@ function fishCaught(a){
 }
 function stepVagrant(p){
   let goal, speed;
+  if(bear&&bear.state!=='dead'&&bear.state!=='leave'&&Math.abs(bear.x-p.x)<110){ moveToward(p,p.x+Math.sign(p.x-bear.x||1)*40,1.0); return; }
   const c=coins.find(k=>!k.flight&&(k.ground||k.vy>0)&&Math.abs(k.x-p.x)<90&&(!k.chaser||k.chaser===p));
   if(c){ c.chaser=p; goal=c.x; speed=1.1; }
   else{ if(--p.wait<=0){ p.wx=p.home+(rnd()-0.5)*70; p.wait=120+Math.floor(rnd()*200); } goal=p.wx; speed=0.25; }
@@ -1442,11 +1460,199 @@ function speedTarget(){
   if(held('ArrowRight','KeyD')){ dir=1; m=held('ShiftLeft','ShiftRight')?1:0.62; }
   return dir*1.4*Math.pow(clamp(m,0,1),1.5);
 }
+// ================= угроза: медведь =================
+let bear=null, nextBear=null;
+const isSubject=p=>p.state!=='vagrant'&&p.state!=='archer';
+function bearBase(){ const h=hall(), R=BAL.hallRadius[h.level||1]; return [h.x-R,h.x+R]; }
+function wallUp(side){ return walls.level>=1&&walls.hp[side<0?0:1]>0; }
+function bearAlert(){ if(!bear||bear.state==='leave'||bear.state==='dead') return false; const [L,R]=bearBase(); return bear.x>L-BAL.bear.alert&&bear.x<R+BAL.bear.alert; }
+function bearInside(){ const [L,R]=bearBase(); return bear.x>L&&bear.x<R; }
+function underUp(b){ return b!==buildings[0]&&buildings.some(o=>o.stage==='building'&&o.of===b); }
+function spawnBear(){
+  const n=nextBear.count||0, side=rnd()<0.5?-1:1;
+  const hp=Math.min(BAL.bear.hpMax,BAL.bear.hp+BAL.bear.hpStep*n);
+  bear={x:side<0?14*T:(W-14)*T,side,face:-side,hp,max:hp,state:'go',hitT:0,walk:0,spookT:0,spookCD:0,prefer:null,deadT:0,swipe:0};
+  nextBear={day:dayNum+BAL.bear.every[0]+Math.floor(rnd()*(BAL.bear.every[1]-BAL.bear.every[0]+1)),phase:0.25+rnd()*0.5,count:n+1};
+}
+function bearTargets(){
+  const done=buildings.filter(b=>b.stage==='done'&&!b.type.endsWith('up')&&b!==buildings[0]);
+  return done;
+}
+function ruinBuilding(b){
+  sparkle(b.x,GY*T-20,'#8a6a48',30); spawnChips(b.x,GY*T-10,'#6a4a2a',24);
+  for(let i=buildings.length-1;i>=0;i--){ const o=buildings[i]; if(o.type.endsWith('up')&&o.of===b){ if(o.builder&&o.builder.dest===o) o.builder.task='follow'; buildings.splice(i,1); } }
+  if(b===buildings[0]){ for(let i=buildings.length-1;i>=0;i--) if(buildings[i].type==='hallup') buildings.splice(i,1);
+    for(let i=0;i<b.bank;i++) dropCoin(b.x+(rnd()-0.5)*40,GY*T-30,(rnd()-0.5)*1.6,-1.5-rnd()); b.bank=0; }
+  if(b.type==='tower'&&b.archer){ const a=b.archer; a.tower=null; a.task='roam'; b.archer=null; }
+  if(b.type==='mill'){ b.grow=0; b.ripe=false; b.ordered=false; b.harvester=null; }
+  if(b.type==='camp'){
+    for(const p of people){ if(p.state==='vagrant') continue;
+      abortTask(p); if(p.tower){ p.tower.archer=null; p.tower=null; }
+      if(p.barn){ p.barn.farmer=null; p.barn=null; } if(p.reap){ p.reap.harvester=null; p.reap.reaping=false; p.reap=null; }
+      let c=CAMPS[0],bd=1e9; for(const k of CAMPS){ const d=Math.abs(k.x*T-p.x); if(d<bd){bd=d;c=k;} }
+      p.state='vagrant'; p.camp=c; p.home=c.x*T; p.task='follow'; p.hidden=false; p.shirt='#6a6258'; p.wait=0; p.pouch=0;
+    }
+  }
+  const need=b.type==='hall'?BAL.hall.need:(BAL[b.type]&&BAL[b.type].need)||4;
+  b.stage='blueprint'; b.ruin=true; b.need=Math.ceil(need/2); b.wood=0; b.incoming=0; b.progress=0; b.bhp=null; b.glow=40;
+}
+function killByBear(p){
+  if(p.tower){ p.tower.archer=null; p.tower=null; }
+  if(p.barn){ p.barn.farmer=null; } if(p.reap){ p.reap.harvester=null; p.reap.reaping=false; }
+  for(const b of buildings) if(b.builder===p) b.builder=null;
+  sparkle(p.x,GY*T-14,'#c84a3a',12); killWorker(p);
+}
+function stepBear(){
+  if(!bear){
+    if(nextBear===null) nextBear={day:dayNum+BAL.bear.first,phase:0.5,count:0};
+    const ph=(dayClock%BAL.dayLen)/BAL.dayLen;
+    if(dayNum>=nextBear.day&&ph>=nextBear.phase&&hall().stage==='done') spawnBear();
+    return;
+  }
+  const B=bear, BB=BAL.bear;
+  if(B.state==='dead'){ if(++B.deadT>150) bear=null; return; }
+  if(B.hp<=0){ B.state='dead'; lootCoins(BB.loot,B.x,GY*T-16,B.killer||null); sparkle(B.x,GY*T-14,'#ffe08a',16); return; }
+  if(B.hitT>0) B.hitT--; if(B.swipe>0) B.swipe--; if(B.spookCD>0) B.spookCD--;
+  let goal=null, speed=BB.speed;
+  // лошадь пугает медведя: встаёт на дыбы, пятится — и идёт громить лагерь
+  if(B.state!=='leave'&&B.spookT===0&&B.spookCD===0&&Math.abs(B.x-pcx())<BB.spook){
+    B.spookT=80; B.spookCD=360; B.face=pcx()>B.x?1:-1;
+    const camp=buildings.find(b=>b.type==='camp'&&b.stage==='done'); if(camp) B.prefer=camp;
+  }
+  if(B.spookT>0){ B.spookT--; B.x=clamp(B.x-B.face*(B.spookT<50?0.7:0),20,W*T-20); return; }
+  if(B.state==='leave'){
+    goal=B.x<W*T/2?4:W*T-4; speed=BB.speed*0.8;
+    if(Math.abs(B.x-goal)<6){ bear=null; return; }
+  } else {
+    const [L,R]=bearBase();
+    // кого догнать
+    let prey=null,bd=BB.chase;
+    for(const p of people){ if(p.hidden||p.tower) continue; const d=Math.abs(p.x-B.x); if(d<bd&&!wallBetween(B.x,p.x)){bd=d;prey=p;} }
+    if(prey){
+      goal=prey.x;
+      if(bd<9&&B.hitT===0){ B.hitT=BB.hitEvery; B.swipe=12; B.face=prey.x>B.x?1:-1; killByBear(prey); }
+    } else {
+      // цель — здание: сперва лагерь, если напуган лошадью; ратуша — последней
+      let t=B.prefer&&B.prefer.stage==='done'?B.prefer:null;
+      if(!t){ const list=bearTargets(); let bd2=1e9; for(const b of list){ const d=Math.abs(b.x-B.x); if(d<bd2){bd2=d;t=b;} } }
+      if(!t&&buildings[0].stage==='done') t=buildings[0];
+      if(!t){ B.state='leave'; }
+      else{
+        goal=t.type==='mill'?t.x-53:t.x;
+        if(Math.abs(B.x-goal)<10&&!wallBetween(B.x,goal)){
+          goal=null; B.face=t.x>B.x?1:-1;
+          if(B.hitT===0){ B.hitT=BB.hitEvery; B.swipe=12; if(t.bhp==null) t.bhp=t===buildings[0]?BB.hallHp:BB.bldHp; t.bhp-=1; spawnChips(t.x+(rnd()-0.5)*t.w*0.5,GY*T-6-rnd()*20,'#8a6a48',3);
+            if(t.bhp<=0){ ruinBuilding(t); if(t===buildings[0]) B.state='leave'; if(B.prefer===t) B.prefer=null; } }
+        }
+      }
+    }
+    // стена держит медведя снаружи
+    if(goal!==null){
+      for(const side of [-1,1]){
+        const wx=wallX(side);
+        if(wallUp(side)&&(B.x-wx)*side>0&&(goal-wx)*side<0){
+          goal=wx+side*9;
+          if(Math.abs(B.x-goal)<3){ goal=null; B.face=-side;
+            if(B.hitT===0){ B.hitT=BB.hitEvery; B.swipe=12; const i=side<0?0:1; walls.hp[i]=Math.max(0,walls.hp[i]-BB.wallDmg); spawnChips(wx,GY*T-10,walls.level>1?'#7d8296':'#6a4a2a',3);
+              if(walls.hp[i]===0){ sparkle(wx,GY*T-16,'#8a6a48',24); spawnChips(wx,GY*T-10,'#6a4a2a',20); } } }
+        }
+      }
+    }
+  }
+  B.mv=false;
+  if(goal!==null&&Math.abs(goal-B.x)>1){ B.face=Math.sign(goal-B.x); B.x+=B.face*speed; B.walk+=speed*0.18; B.mv=true; }
+  B.x=clamp(B.x,2,W*T-2);
+}
+function wallBetween(a,b){
+  for(const side of [-1,1]){ const wx=wallX(side); if(wallUp(side)&&(a-wx)*(b-wx)<0) return true; }
+  return false;
+}
+// работяги прячутся в лагере, воины встают у стены со стороны медведя
+function hideSpot(){ const c=buildings.find(b=>b.type==='camp'&&b.stage==='done'); if(c) return c.x; const h=buildings[0]; return h.x; }
+function stepHide(p){
+  if(p.task!=='hide'){ abortTask(p); if(p.reap){ p.reap.harvester=null; p.reap.reaping=false; p.reap=null; } p.task='hide'; p.hidden=false; }
+  const g=hideSpot();
+  if(Math.abs(p.x-g)<4){ p.hidden=true; p.vx=0; return; }
+  p.hidden=false; moveToward(p,g,1.0);
+}
+function endHide(p){ p.hidden=false; p.task=p.state==='farmer'?'farm':'follow'; if(p.state==='fisher') p.fstate='walk'; }
+function stepDefend(a){
+  if(a.reload>0) a.reload--;
+  if(a.act>0) a.act--;
+  const B=bear, side=B.x<hall().x?-1:1;
+  let goal;
+  if(wallUp(side)&&!bearInside()) goal=wallX(side)-side*14;
+  else goal=B.x-Math.sign(B.x-a.x||1)*BAL.archer.range*0.8;
+  const d=Math.abs(B.x-a.x);
+  if(d<BAL.archer.range+20&&a.reload===0){ a.face=B.x>a.x?1:-1; shoot(a,{kind:'bear',ref:B,x:B.x}); }
+  moveToward(a,goal,BAL.archer.speed);
+}
+// ---- спрайты медведя: та же «пушистая» заливка, что у деревьев, в двойном разрешении ----
+const BROWN=['#140c08','#24150d','#3a2314','#50311c','#664024','#7e5230','#986640'];
+let BEAR_SPR=null;
+function makeBearSprites(){
+  const out={walk:[],swipe:null,rear:null,dead:null};
+  const legs=(g,list)=>{ for(const [x,y,h] of list){ g.fillStyle=BROWN[0]; g.fillRect(x-1,y,9,h); g.fillStyle=BROWN[2]; g.fillRect(x,y,7,h-1); g.fillStyle=BROWN[3]; g.fillRect(x+1,y,2,h-3); g.fillStyle=BROWN[0]; g.fillRect(x+1,y+h-2,8,2); } };
+  const body=(dx,dy,extra)=>[{x:20+dx,y:25+dy,r:12},{x:32+dx,y:24+dy,r:13},{x:44+dx,y:20+dy,r:12},{x:33+dx,y:30+dy,r:9,sq:0.7},
+    {x:56+dx,y:21+dy,r:8},{x:64+dx,y:24+dy,r:4.5},{x:52+dx,y:13+dy,r:3},{x:13+dx,y:22+dy,r:4}].concat(extra||[]);
+  const LEGP=[[-3,2,3,-2],[0,0,0,0],[3,-2,-3,2],[0,0,0,0]];
+  for(let f=0;f<4;f++){
+    const [c,g]=mkCanvas(76,48), o=LEGP[f], lift=k=>f%2===1&&k?0:0;
+    legs(g,[[15+o[0],30,17],[25+o[1],30,17],[42+o[2],30,17],[51+o[3],30,17]]);
+    blobShade(g,76,48,body(0,f%2?-1:0),BROWN,77,{rate:23,col:BROWN[6]},0.3);
+    g.fillStyle='#000'; g.fillRect(58,18+(f%2?-1:0),2,2); g.fillRect(68,22+(f%2?-1:0),2,2);
+    out.walk.push(c);
+  }
+  { const [c,g]=mkCanvas(76,48);
+    legs(g,[[15,30,17],[25,30,17],[42,30,17]]);
+    blobShade(g,76,48,body(0,1,[{x:64,y:34,r:5},{x:58,y:31,r:4}]),BROWN,77,{rate:23,col:BROWN[6]},0.3);
+    g.fillStyle='#000'; g.fillRect(58,19,2,2); g.fillRect(68,23,2,2);
+    g.fillStyle='#e8e0d0'; for(let i=0;i<3;i++) g.fillRect(68,32+i*2,3,1);
+    g.fillStyle='#e8e0d0'; g.fillRect(66,27,1,2); g.fillRect(64,27,1,2);
+    out.swipe=c; }
+  { const [c,g]=mkCanvas(48,76);
+    legs(g,[[13,60,16],[23,60,16]]);
+    blobShade(g,48,76,[{x:22,y:56,r:12},{x:22,y:44,r:13},{x:24,y:32,r:11},{x:27,y:18,r:8},{x:34,y:20,r:4.5},{x:23,y:10,r:3},
+      {x:34,y:32,r:4},{x:38,y:27,r:3.5},{x:14,y:36,r:4},{x:10,y:30,r:3.5},{x:22,y:50,r:9,sq:0.8}],BROWN,77,{rate:23,col:BROWN[6]},0.3);
+    g.fillStyle='#000'; g.fillRect(29,15,2,2); g.fillRect(37,19,2,2);
+    g.fillStyle='#e8e0d0'; g.fillRect(40,25,1,3); g.fillRect(42,26,1,3); g.fillRect(9,28,1,3); g.fillRect(7,29,1,3);
+    g.fillStyle='#c84a3a'; g.fillRect(34,23,3,1);
+    out.rear=c; }
+  { const [c,g]=mkCanvas(76,48);
+    blobShade(g,76,48,[{x:22,y:40,r:12,sq:0.55},{x:36,y:40,r:13,sq:0.55},{x:50,y:41,r:10,sq:0.55},{x:62,y:42,r:7,sq:0.7}],BROWN,77,null,0.2);
+    out.dead=c; }
+  return out;
+}
+function drawBear(cx,base){
+  const B=bear; if(!B) return;
+  if(!BEAR_SPR) BEAR_SPR=makeBearSprites();
+  const sx=Math.round(B.x-cx); if(sx<-40||sx>VW+40) return;
+  let img;
+  if(B.state==='dead') img=BEAR_SPR.dead;
+  else if(B.spookT>0) img=BEAR_SPR.rear;
+  else if(B.swipe>0) img=BEAR_SPR.swipe;
+  else img=BEAR_SPR.walk[B.mv?Math.floor(B.walk)%4:1];
+  const w=img.width/HR, h=img.height/HR;
+  ctx.save(); ctx.translate(sx,base+1); ctx.scale(B.face,1);
+  if(B.state==='dead') ctx.globalAlpha=Math.max(0,1-B.deadT/150);
+  ctx.fillStyle='rgba(20,10,20,0.3)'; ctx.fillRect(-16,-0.5,32,1);
+  const shake=B.spookT>0&&B.spookT>50?((B.spookT>>1)&1):0;
+  ctx.drawImage(img,-w/2+shake,-h,w,h);
+  ctx.restore();
+  if(B.state!=='dead'&&B.hp<B.max){ const top=base-h-6; ctx.fillStyle='#1a1018'; ctx.fillRect(sx-11,top,22,3); ctx.fillStyle='#c84a3a'; ctx.fillRect(sx-10,top+1,Math.round(20*B.hp/B.max),1); }
+}
+
 function isTimed(b){ return b.type.endsWith('up'); }
 function upKey(b){ return b.type==='hallup'?['hall',hall().level+1]:b.type==='wallup'?['wall',b.lvl]:[b.of.type,(b.of.level||1)+1]; }
 // прокачки идут по настоящим часам: старт — когда собраны все брёвна
 function tickTimers(){
   const now=Date.now();
+  if(walls.level>=1&&!bearAlert()) for(const i of [0,1]){
+    if(walls.hp[i]>=BAL.wall.hp[walls.level]||people.some(q=>q.task==='wallfix'&&q.side===i)) continue;
+    const free=q=>q.task==='follow'&&!q.coin&&!q.logs&&!q.scaff;
+    const pick=people.find(q=>q.state==='carpenter'&&free(q))||people.find(q=>q.state==='worker'&&free(q));
+    if(pick){ pick.task='wallfix'; pick.side=i; }
+  }
   for(const b of buildings.slice()){
     if(b.stage!=='building'||!isTimed(b)) continue;
     const bd=b.builder;
@@ -1463,6 +1669,7 @@ function tickTimers(){
   }
 }
 function finishBuilding(b){
+  const wasRuin=!!b.ruin; b.ruin=false; b.bhp=null;
   b.progress=1; b.stage='done'; sparkle(b.x,GY*T-40,'#ffe08a',30); for(const w of people) if(w.task==='build'&&w.dest===b) w.task='follow';
   if(b.type==='hall'&&walls.level<1) setWallLevel(1);
   if(b.type==='wallup'){
@@ -1471,7 +1678,7 @@ function finishBuilding(b){
   }
   else if(b.type==='hallup'){ hall().level++; buildings.splice(buildings.indexOf(b),1); sparkle(b.x,GY*T-60,'#bfe0ff',30); }
   else if(b.type.endsWith('up')){ b.of.level=(b.of.level||1)+1; buildings.splice(buildings.indexOf(b),1); sparkle(b.of.type==='mill'?b.x-53:b.x,GY*T-40,'#bfe0ff',24); }
-  else if(b.type==='barn'){ addSheep(b,true); addSheep(b,true); }
+  else if(b.type==='barn'&&!wasRuin){ addSheep(b,true); addSheep(b,true); }
 }
 function stepPhysics(){
   if(tick%10===0) tutTick();
@@ -1521,8 +1728,14 @@ function stepPhysics(){
   sheep=sheep.filter(q=>!q.dead);
   stepBirds();
   updCoins();
+  stepBear();
+  const alert=bearAlert();
   let wi=0;
   for(const p of people.slice()){
+    if(people.indexOf(p)<0) continue;
+    if(alert&&isSubject(p)){ stepHide(p); continue; }
+    if(alert&&p.state==='archer'&&!p.tower){ stepDefend(p); continue; }
+    if(!alert&&p.task==='hide') endHide(p);
     if(p.state==='vagrant') stepVagrant(p);
     else if(p.state==='archer') stepArcher(p);
     else if(p.state==='farmer'){ if(!p.barn) p.idx=wi++; stepFarmer(p); }
@@ -1531,8 +1744,9 @@ function stepPhysics(){
   }
   updArrows();
   for(const t of trees) if(t.grow<1) t.grow=Math.min(1,t.grow+1/900);
+  if(!alert) for(const b of buildings) b.bhp=null;
   for(const b of buildings){ if(b.glow>0) b.glow--;
-    if(b.scaffolder&&(people.indexOf(b.scaffolder)<0||b.scaffolder.task!=='scaffold'||b.scaffolder.dest!==b)) b.scaffolder=null; if(b.type==='mill'&&b.stage==='done'&&!b.ripe){ b.grow=(b.grow||0)+1/(BAL.mill.grow*60); if(b.grow>=1){ b.grow=1; b.ripe=true; } } }
+    if(b.scaffolder&&(people.indexOf(b.scaffolder)<0||b.scaffolder.task!=='scaffold'||b.scaffolder.dest!==b)) b.scaffolder=null; if(b.type==='mill'&&b.stage==='done'&&!b.ripe&&!underUp(b)){ b.grow=(b.grow||0)+1/(BAL.mill.grow*60); if(b.grow>=1){ b.grow=1; b.ripe=true; } } }
   updateUI();
 
   const lead=P.face*clamp(v*22,0,30);
@@ -1564,6 +1778,7 @@ function drawTreeSprite(img,sx,base,sway,shake){
 
 function drawPerson(p,cx,base){
   const sx=Math.round(p.x-cx); if(sx<-20||sx>VW+20) return;
+  if(p.hidden) return;
   if(p.task==='train'&&p.trainT>0) return;                       // внутри лагеря
   const moving=Math.abs(p.vx)>0.08, ph=Math.floor(p.walk)%2;
   const by=p.tower?base-48:base;
@@ -1650,12 +1865,12 @@ function drawBuilding(b,cx,base){
     ctx.fillStyle='#6a4a2a'; for(const sx of [x-10,x,x+10]) ctx.fillRect(sx,base-30,2,30);
     ctx.fillRect(x-12,base-20,26,1); ctx.fillRect(x-12,base-10,26,1);
     if(b.stage==='blueprint') for(let i=0;i<b.need;i++){ const lx=x-Math.floor(b.need*5/2)+i*5, ly=base-38; ctx.fillStyle='#1a1018'; ctx.fillRect(lx-1,ly-1,6,4); ctx.fillStyle=i<b.wood?'#c79a62':'#4a3a3a'; ctx.fillRect(lx,ly,4,2); }
-    else { ctx.fillStyle='#1a1018'; ctx.fillRect(x-12,base-39,24,4); ctx.fillStyle='#bfe0ff'; ctx.fillRect(x-11,base-38,Math.round(22*b.progress),2); drawHourglass(x,base-48); }
+    else { ctx.fillStyle='#1a1018'; ctx.fillRect(x-12,base-39,24,4); ctx.fillStyle='#bfe0ff'; ctx.fillRect(x-11,base-38,Math.round(22*b.progress),2); drawHourglass(x,base-57); drawUpTime(b,x,base-47); }
     return;
   }
   if(b.type.endsWith('up')&&b.type!=='wallup'){
     const S_=b.type==='hallup'?SPR.hall:SPR[b.of.type], hw=S_.width, hh=S_.height, x0=x-Math.floor(hw/2), y0=base-hh+1;
-    if(b.stage==='building'){ ctx.fillStyle='#1a1018'; ctx.fillRect(x-16,y0-35,32,4); ctx.fillStyle='#bfe0ff'; ctx.fillRect(x-15,y0-34,Math.round(30*b.progress),2); drawHourglass(x,y0-44); return; }
+    if(b.stage==='building'){ ctx.fillStyle='#1a1018'; ctx.fillRect(x-16,y0-35,32,4); ctx.fillStyle='#bfe0ff'; ctx.fillRect(x-15,y0-34,Math.round(30*b.progress),2); drawHourglass(x,y0-53); drawUpTime(b,x,y0-43); return; }
     ctx.fillStyle='#6a4a2a';
     for(const sx of [x0-2,x0+Math.floor(hw/3),x0+Math.floor(hw*2/3),x0+hw]) ctx.fillRect(sx,y0+10,2,hh-10);
     ctx.fillRect(x0-3,y0+22,hw+6,1); ctx.fillRect(x0-3,y0+hh-14,hw+6,1);
@@ -1670,6 +1885,16 @@ function drawBuilding(b,cx,base){
     return;
   }
   const spr=SPR[b.type], hw=spr.width, hh=spr.height, x0=x-Math.floor(hw/2), y0=base-hh+1;
+  if(b.ruin&&b.stage==='blueprint'){
+    const rh=Math.round(hh*0.36);
+    ctx.drawImage(spr,0,hh-rh,hw,rh,x0,y0+hh-rh,hw,rh);
+    ctx.fillStyle='rgba(26,16,22,0.55)'; ctx.fillRect(x0,y0+hh-rh,hw,rh);
+    for(let i=0;i<hw;i+=3){ const hgt=2+(hash(i,b.x|0)%Math.max(2,Math.round(rh*0.6))); ctx.fillStyle=['#3a2a20','#4a3628','#5a4632'][hash(i,7)%3]; ctx.fillRect(x0+i,y0+hh-rh-hgt+3,3,hgt); }
+    for(let i=0;i<5;i++){ const lx=x0+(hash(i,b.x|0,3)%Math.max(1,hw-10)), ly=base-2-(i%2)*3; ctx.fillStyle='#2a1a10'; ctx.fillRect(lx,ly,10,3); ctx.fillStyle='#6a4a2a'; ctx.fillRect(lx+1,ly+1,8,1); }
+    for(let i=0;i<b.need;i++){ const lx=x-Math.floor(b.need*5/2)+i*5, ly=y0+hh-rh-14; ctx.fillStyle='#1a1018'; ctx.fillRect(lx-1,ly-1,6,4); ctx.fillStyle=i<b.wood?'#c79a62':'#4a3a3a'; ctx.fillRect(lx,ly,4,2); }
+    return;
+  }
+  if(b.bhp!=null&&b.stage==='done'){ const mx=b===buildings[0]?BAL.bear.hallHp:BAL.bear.bldHp; ctx.fillStyle='#1a1018'; ctx.fillRect(x-12,y0-8,24,3); ctx.fillStyle='#c84a3a'; ctx.fillRect(x-11,y0-7,Math.round(22*Math.max(0,b.bhp)/mx),1); }
   const upg=b.stage==='done'&&buildings.find(o=>o.stage==='building'&&(o.type==='hallup'?b===buildings[0]:o.of===b));
   if(upg){
     const a=0.7+0.2*Math.sin(anim*3);
@@ -1743,6 +1968,9 @@ function drawField(m,cx,base){
     if(m.ripe){ ctx.fillStyle='#f6dc80'; ctx.fillRect(x+tip,base-h-2,1,2); }
   }
 }
+function upRemain(b){ if(b.t0) return Math.max(0,b.tDur-(Date.now()-b.t0)); const [k,lv]=upKey(b); return (BAL.upTime[k]&&BAL.upTime[k][lv])||60e3; }
+function fmtTime(ms){ const s=Math.ceil(ms/1000), h=Math.floor(s/3600), m=Math.floor(s%3600/60), ss=s%60, two=v=>String(v).padStart(2,'0'); return h?h+':'+two(m)+':'+two(ss):m+':'+two(ss); }
+function drawUpTime(b,x,y){ const t=fmtTime(upRemain(b)); pxText(t,x-Math.floor(t.length*4/2)+1,y,b.t0?'#dff0ff':'#8a98b0'); }
 function drawHourglass(x,y){
   const f=Math.floor(anim*1.5)%2, px=(a,b,w,h,c)=>{ ctx.fillStyle=c; ctx.fillRect(x+a,y+b,w,h); };
   px(-3,0,7,1,'#c79a62'); px(-3,8,7,1,'#c79a62');
@@ -1950,6 +2178,7 @@ function render(){
     else if(q.adult&&farmerHere&&q.barn.farmer&&flockOf(q.barn).length>=BAL.sheepMin&&Math.abs(q.x-pcx())<70) iconSlot(sx-2,by-6,(Math.abs(q.x-pcx())<26?1:0.55)*(0.8+0.2*Math.sin(anim*4)));
   }
 
+  drawBear(cx,gy);
   for(const p of people) if(p.state==='vagrant'||p.state==='archer'||p.task!=='follow') drawPerson(p,cx,gy);
   drawRider(pcx()-cx,P.y+P.h-oy,P.face,walkT,anim,P.onGround,clamp(Math.abs(P.vx)/1.4,0,1));
   for(const p of people) if(p.state!=='vagrant'&&p.state!=='archer'&&p.task==='follow') drawPerson(p,cx,gy);
@@ -2024,12 +2253,12 @@ function saveGame(){
   if(resetting||!bootDone) return;          // пока не прочитали облако — не затираем прогресс
   try{
     const bi=b=>buildings.indexOf(b);
-    const data={v:1,walls,P:{x:P.x,face:P.face},purse:Math.min(COIN_MAX,purse+incomingPurse()),dayClock,dayNum,
+    const data={v:1,walls,nextBear,P:{x:P.x,face:P.face},purse:Math.min(COIN_MAX,purse+incomingPurse()),dayClock,dayNum,
       trees:trees.map(t=>[t.x,t.hp,t.v,t.marked?1:0,t.grow]),
       stumps, logs:logs.map(l=>l.x),
       coins:coins.filter(c=>!c.flight).map(c=>[Math.round(c.x),c.bounty?1:0]),
       rabbits:rabbits.map(r=>[Math.round(r.x),Math.round(r.home)]),
-      buildings:buildings.map(b=>({type:b.type,x:b.x,stage:b.stage,coins:b.coins||0,need:b.need,wood:b.wood,progress:b.progress,bank:b.bank||0,w:b.w,level:b.level||1,side:b.side??null,lvl:b.lvl??null,of:b.of?bi(b.of):-1,pasture:b.pasture??null,grow:b.grow||0,ripe:!!b.ripe,ordered:!!b.ordered,t0:b.t0||0,tDur:b.tDur||0})),
+      buildings:buildings.map(b=>({type:b.type,x:b.x,stage:b.stage,coins:b.coins||0,need:b.need,wood:b.wood,progress:b.progress,bank:b.bank||0,w:b.w,level:b.level||1,side:b.side??null,lvl:b.lvl??null,of:b.of?bi(b.of):-1,pasture:b.pasture??null,grow:b.grow||0,ripe:!!b.ripe,ordered:!!b.ordered,ruin:!!b.ruin,t0:b.t0||0,tDur:b.tDur||0})),
       sheep:sheep.map(q=>[Math.round(q.x),bi(q.barn),q.adult?1:0,q.born,q.marked?1:0,q.state]),
       people:people.map(p=>({x:Math.round(p.x),state:p.state,camp:CAMPS.indexOf(p.camp),shirt:p.shirt,pouch:p.pouch,wage:p.wage,wageT:p.wageT,
         coin:p.coin,logs:p.logs,tower:p.tower?bi(p.tower):-1,barn:p.barn?bi(p.barn):-1,trainTo:p.trainTo,trainDest:p.task==='train'?bi(p.dest):-1}))};
@@ -2044,7 +2273,7 @@ function loadGame(d){
   if(d===undefined) d=readLocal();
   if(!d||d.v!==1) return false;
   try{
-    P.x=d.P.x; P.face=d.P.face; purse=d.purse; dayClock=d.dayClock; dayNum=d.dayNum;
+    P.x=d.P.x; P.face=d.P.face; purse=d.purse; dayClock=d.dayClock; dayNum=d.dayNum; nextBear=d.nextBear||null; bear=null;
     trees=d.trees.map(a=>{ const t=newTree(a[0]); t.hp=a[1]; t.v=a[2]%TREE_SPR.length; t.marked=!!a[3]; t.grow=a[4]; return t; });
     stumps=d.stumps.slice();
     logs=d.logs.map(x=>({x,taken:null}));
