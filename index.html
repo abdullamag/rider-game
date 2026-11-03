@@ -1818,10 +1818,24 @@ function tickTimers(){
     const pick=people.find(q=>q.state==='carpenter'&&free(q))||people.find(q=>q.state==='worker'&&free(q));
     if(pick){ pick.task='wallfix'; pick.side=i; }
   }
+  // обычная стройка важнее прокачки: если её некому строить, строитель прокачки временно уходит на неё
+  const canBuild=q=>(q.state==='worker'||q.state==='carpenter');
+  const freeQ=q=>(q.task==='follow'||q.task==='hunt')&&!q.coin&&!q.logs&&!q.scaff;
+  const regular=buildings.filter(o=>o.stage==='building'&&!isTimed(o)&&!people.some(q=>q.task==='build'&&q.dest===o));
+  if(regular.length&&!people.some(q=>canBuild(q)&&freeQ(q))){
+    const up=buildings.find(o=>o.stage==='building'&&isTimed(o)&&o.builder&&people.includes(o.builder)&&o.builder.task==='build');
+    if(up){ const q=up.builder; up.builder=null; q.dest=regular[0]; q.task='build'; }
+  }
+  const busyRegular=people.some(canBuild)&&buildings.some(o=>o.stage==='building'&&!isTimed(o));
   for(const b of buildings.slice()){
     if(b.stage!=='building'||!isTimed(b)) continue;
     const bd=b.builder;
+    const here=bd&&people.includes(bd)&&bd.task==='build'&&bd.dest===b&&Math.abs(bd.x-b.x)<30;
+    // пока строителя нет на месте, таймер стоит (но время, когда игра была закрыта, засчитывается)
+    if(b.t0&&!here&&b.lastT&&now-b.lastT<5000) b.t0+=now-b.lastT;
+    b.lastT=now;
     if(!(bd&&people.includes(bd)&&bd.task==='build'&&bd.dest===b)){
+      if(busyRegular){ b.builder=null; continue; }
       b.builder=null;
       const free=q=>(q.task==='follow'||q.task==='hunt')&&!q.coin&&!q.logs&&!q.scaff;
       const near=a=>a.sort((u,v)=>Math.abs(u.x-b.x)-Math.abs(v.x-b.x))[0];
@@ -1902,6 +1916,7 @@ function stepPhysics(){
     if(alert&&isSubject(p)){ stepHide(p); continue; }
     if(alert&&p.state==='archer'&&!p.tower){ stepDefend(p); continue; }
     if(!alert&&p.task==='hide') endHide(p);
+    if(!alert&&p.hidden) p.hidden=false;
     if(p.state==='vagrant') stepVagrant(p);
     else if(p.state==='archer') stepArcher(p);
     else if(p.state==='farmer'){ if(!p.barn) p.idx=wi++; stepFarmer(p); }
