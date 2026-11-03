@@ -65,7 +65,8 @@ const COIN_MAX=10;
 // ---- игровые числа (всё в одном месте, чтобы балансировать) ----
 const BAL={
   dayLen:600, darkLen:420,                 // сутки 10 мин, темнеет 7 мин, светлеет 3
-  rabbitMax:11, rabbitEvery:1200, rabbitStart:11,   // новый кролик каждые 20 с, если на карте есть место
+  // новый кролик каждые 45 с, на старте 4, всего не больше 6
+  rabbitMax:6, rabbitEvery:2700, rabbitStart:4,
   rabbitCoins:2, birdCoins:1,
   vagrantEvery:5, vagrantMax:3,
   birdEvery:[3600,7200],                   // птица раз в 1–2 минуты
@@ -1179,6 +1180,15 @@ function stepWorker(p){
       if(c.ground&&Math.abs(p.x-c.x)<6){ coins.splice(coins.indexOf(c),1); p.coinT=null; takeCoinFor(p); }
       break;
     }
+    case 'stash':{
+      if(!(p.coin>0)){ p.task='follow'; break; }
+      goal=p.stashX; speed=1.15;
+      // лучник видит вора — отнимает монету, никого не убивая
+      const seer=people.find(a=>a.state==='archer'&&Math.hypot(a.x-p.x,a.tower?40:0)<BAL.archerSight);
+      if(seer){ p.coin=0; coinToPlayer(p.x,GY*T-22); sparkle(p.x,GY*T-24,'#bfe0ff',8); seer.face=p.x>seer.x?1:-1; seer.act=12; p.task='follow'; break; }
+      if(Math.abs(p.x-goal)<3){ addStash(goal,p.coin); p.coin=0; spawnChips(goal,GY*T-3,'#5a4030',6); p.act=20; p.task='follow'; }
+      break;
+    }
     case 'bring':{
       if(!(p.coin>0)){ p.task='follow'; break; }
       if(p.thief){ if(--p.stealT<=0) steal(p); }
@@ -1211,13 +1221,15 @@ function takeCoinFor(p){
   if(p.state==='worker'&&rnd()<BAL.stealChance){ p.thief=true; p.stealT=40+Math.floor(rnd()*60); }
 }
 function steal(p){
-  p.thief=false; p.coin=0; p.stolen++;
-  sparkle(p.x,GY*T-24,'#b07ad0',6);
-  let seer=null,bd=BAL.archerSight;
-  for(const a of people){ if(a.state!=='archer') continue; const d=Math.hypot(a.x-p.x,(a.tower?40:0)); if(d<bd){bd=d;seer=a;} }
-  if(seer){ seer.reload=0; shoot(seer,{kind:'worker',ref:p}); }
-  p.task='follow';
+  p.thief=false;
+  // ближайший куст в стороне от короля — там будет тайник
+  let bx=null,bd=1e9;
+  for(const b of bushes){ const x=b.x*T, d=Math.abs(x-p.x); if(d<bd&&d<220&&Math.abs(x-pcx())>60){bd=d;bx=x;} }
+  p.stashX=bx!==null?bx:clamp(p.x+(p.x<pcx()?-90:90),20,W*T-20);
+  p.task='stash';
 }
+let stashes=[], graves=[];
+function addStash(x,n){ const s0=stashes.find(s=>Math.abs(s.x-x)<12); if(s0) s0.n+=n; else stashes.push({x,n}); }
 function moveToward(p,goal,speed){
   if(goal!==null&&Math.abs(goal-p.x)>1){ const dir=Math.sign(goal-p.x); p.face=dir; p.vx+=(dir*speed-p.vx)*0.15; }
   else p.vx*=0.7;
@@ -1344,6 +1356,7 @@ function killBird(b,shooter){
   lootCoins(BAL.birdCoins,b.x,b.y,shooter);
 }
 function killWorker(w){
+  graves.push({x:Math.round(w.x),day:dayNum});
   SFX.death(w.x);
   people.splice(people.indexOf(w),1);
   spawnChips(w.x,GY*T-12,'#5a5060',10);
@@ -1432,6 +1445,7 @@ function darkAt(t){
 }
 function newDay(){
   dayNum++;
+  graves=graves.filter(g=>dayNum-g.day<2);
   // одно дерево на месте срубленного
   // лес: по 2 дерева в сутки на месте срубленных; если деревьев меньше 20 — подсадка на свободные места
   for(let k=0;k<BAL.treesPerDay&&stumps.length;k++){ const si=Math.floor(rnd()*stumps.length), x=stumps.splice(si,1)[0]; const t=newTree(x); t.grow=0; trees.push(t); }
@@ -1885,6 +1899,8 @@ function stepPhysics(){
   let inv=0; for(const k of GAITS) inv+=GW[k]*2*RGAIT[k].stride/RGAIT[k].duty;
   if(P.onGround) walkT+=v/inv;
   hoofTick();
+  for(const st of stashes) if(Math.abs(st.x-pcx())<10){ for(let i=0;i<st.n;i++) coinToPlayer(st.x,GY*T-6); sparkle(st.x,GY*T-8,'#ffe08a',12); spawnChips(st.x,GY*T-3,'#5a4030',8); st.dead=true; }
+  if(stashes.some(st=>st.dead)) stashes=stashes.filter(st=>!st.dead);
   P.vy=Math.min(P.vy+0.3,5); moveY(P.vy);
   P.onGround=collides(P.x,P.y+0.5);
   const mv=(P.onGround&&v>0.03)?1:0;
@@ -2320,6 +2336,13 @@ function render(){
   for(const b of buildings) drawBuilding(b,cx,gy);
   drawWalls(cx,gy);
   drawGhost(cx,gy);
+  for(const g of graves){ const sx=Math.round(g.x-cx); if(sx<-12||sx>VW+12) continue;
+    ctx.fillStyle='#1a1010'; ctx.fillRect(sx-7,gy-5,14,5); ctx.fillRect(sx-6,gy-6,11,1);
+    ctx.fillStyle='#5a3a24'; ctx.fillRect(sx-6,gy-5,12,4); ctx.fillStyle='#7a5434'; ctx.fillRect(sx-5,gy-5,9,1);
+    ctx.fillStyle='#c8b090'; ctx.fillRect(sx-1,gy-4,1,3); ctx.fillRect(sx-2,gy-3,3,1); }
+  for(const st of stashes){ const sx=Math.round(st.x-cx); if(sx<-8||sx>VW+8) continue;
+    ctx.fillStyle='#3a2a1e'; ctx.fillRect(sx-4,gy-2,8,2); ctx.fillStyle='#4e3a28'; ctx.fillRect(sx-3,gy-3,6,1);
+    const d=Math.abs(st.x-pcx()); if(d<90&&Math.sin(anim*3+st.x)>0.6){ ctx.fillStyle=`rgba(255,226,140,${1-d/90})`; ctx.fillRect(sx,gy-4,1,1); ctx.fillRect(sx-1,gy-3,3,1); } }
   for(const l of logs){ const sx=Math.round(l.x-cx); if(sx<-10||sx>VW+10) continue; ctx.fillStyle='#2a1a10'; ctx.fillRect(sx-6,gy-4,13,4); ctx.fillStyle='#8a5e38'; ctx.fillRect(sx-5,gy-3,11,2); ctx.fillStyle='#c79a62'; ctx.fillRect(sx+5,gy-3,1,2); }
   for(const r of rabbits){
     const sx=Math.round(r.x-cx); if(sx<-8||sx>VW+8) continue;
@@ -2436,7 +2459,7 @@ function saveGame(){
     const bi=b=>buildings.indexOf(b);
     const data={v:1,walls,nextBear,P:{x:P.x,face:P.face},purse:Math.min(COIN_MAX,purse+incomingPurse()),dayClock,dayNum,
       trees:trees.map(t=>[t.x,t.hp,t.v,t.marked?1:0,t.grow]),
-      stumps, logs:logs.map(l=>l.x),
+      stumps, logs:logs.map(l=>l.x), stashes, graves,
       coins:coins.filter(c=>!c.flight).map(c=>[Math.round(c.x),c.bounty?1:0]),
       rabbits:rabbits.map(r=>[Math.round(r.x),Math.round(r.home)]),
       buildings:buildings.map(b=>({type:b.type,x:b.x,stage:b.stage,coins:b.coins||0,need:b.need,wood:b.wood,progress:b.progress,bank:b.bank||0,w:b.w,level:b.level||1,side:b.side??null,lvl:b.lvl??null,of:b.of?bi(b.of):-1,pasture:b.pasture??null,grow:b.grow||0,ripe:!!b.ripe,ordered:!!b.ordered,ruin:!!b.ruin,t0:b.t0||0,tDur:b.tDur||0})),
@@ -2458,6 +2481,7 @@ function loadGame(d){
     trees=d.trees.map(a=>{ const t=newTree(a[0]); t.hp=a[1]; t.v=a[2]%TREE_SPR.length; t.marked=!!a[3]; t.grow=a[4]; return t; });
     stumps=d.stumps.slice();
     logs=d.logs.map(x=>({x,taken:null}));
+    stashes=(d.stashes||[]).map(s=>({x:s.x,n:s.n})); graves=(d.graves||[]).map(g=>({x:g.x,day:g.day}));
     coins=d.coins.map(a=>({x:a[0],y:GY*T-2,vx:0,vy:0,ground:true,age:200,flight:null,bounty:!!a[1],claim:null}));
     rabbits=[]; for(const a of d.rabbits){ spawnRabbit(a[0]); rabbits[rabbits.length-1].home=a[1]; }
     buildings=d.buildings.map(b=>Object.assign({},b,{incoming:0,glow:0,builder:null,scaffolder:null,archer:null,farmer:null,out:false,harvester:null,reaping:false}));
