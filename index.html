@@ -460,7 +460,7 @@ function reapStep(p,m,barn){
   const L=fieldL(m), R=fieldR(m);
   if(!m.reaping){ moveToward(p,L,0.9); if(Math.abs(p.x-L)<3){ m.reaping=true; m.cutX=L; } return; }
   p.task='reap'; p.face=1; m.cutX+=0.3; p.x=m.cutX; p.vx=0.3; p.walk+=0.08;
-  if(p.act>0) p.act--; else p.act=20;
+  if(p.act>0) p.act--; else { p.act=20; SFX.reap(p.x); }
   if(tick%8===0) spawnChips(m.cutX+4,GY*T-6,'#e0c060',1,0.05);
   if(m.cutX>=R){
     m.reaping=false; m.ripe=false; m.ordered=false; m.grow=0; m.harvester=null; p.reap=null; p.task='farm';
@@ -844,7 +844,7 @@ function menuItems(b){
   return it;
 }
 function openMenu(b){
-  uiMode='menu'; uiFor=b; menuEl.innerHTML=''; if(b.type==='hall') tut.menu=true;
+  uiMode='menu'; uiFor=b; menuEl.innerHTML=''; SFX.click(); if(b.type==='hall') tut.menu=true;
   for(const [k,cost] of menuItems(b)){
     const card=document.createElement('div'); card.className='card'; card.dataset.kind=k; card.dataset.cost=cost;
     const ic=iconCanvas(k,cost); ic.style.width='72px'; ic.style.height='96px';
@@ -1001,7 +1001,7 @@ function throwCoin(){
     for(const tr of trees){ if(tr.marked||tr.grow<1) continue; const d=Math.abs(tr.x*T+4-hx); if(d<bd){bd=d;best=tr;} }
     if(best) target={type:'tree',tree:best};
   }
-  purse--; actT=8; tut.thrown++;
+  purse--; actT=8; tut.thrown++; SFX.coin(pcx(),1.1,0.4);
   const c={x:handX(),y:handY(),vx:0,vy:0,ground:false,age:0,flight:null};
   if(target){
     const tx=target.type==='tree'?target.tree.x*T+4:target.type==='sheep'?target.sheep.x:target.type==='field'?(fieldL(target.mill)+fieldR(target.mill))/2:h.x;
@@ -1022,6 +1022,7 @@ function takeCoin(){
 }
 function coinArrive(c){
   const tg=c.flight.target, h=hall();
+  SFX.coin(c.x,tg.type==='purse'?1.25:1,tg.type==='purse'?0.4:0.35);
   if(tg.type==='tree'||tg.type==='sheep'||tg.type==='field') sparkle(c.x,c.y,'#ffe08a',6);
   else if(tg.type==='site'){ h.coins++; sparkle(c.x,c.y,'#ffe08a',8); if(h.coins>=BAL.hall.siteCoins){ h.stage='blueprint'; h.glow=60; sparkle(h.x,GY*T-30,'#bfe0ff',24); } }
   else if(tg.type==='hall'){ h.bank++; sparkle(c.x,c.y,'#ffe08a',8); }
@@ -1043,12 +1044,12 @@ function updCoins(){
     }
     if(!c.ground){
       c.vy+=0.18; c.x+=c.vx; c.y+=c.vy;
-      if(c.y>=GY*T-2){ c.y=GY*T-2; if(Math.abs(c.vy)>1){ c.vy*=-0.35; c.vx*=0.6; } else { c.ground=true; c.vx=0; c.vy=0; } }
+      if(c.y>=GY*T-2){ c.y=GY*T-2; if(Math.abs(c.vy)>1){ c.vy*=-0.35; c.vx*=0.6; } else { c.ground=true; c.vx=0; c.vy=0; SFX.coinLand(c.x); } }
     }
     if(c.ground||c.y>GY*T-10){
-      for(const p of people){ if(p.state!=='vagrant') continue; if(Math.abs(p.x-c.x)<14){ hire(p); c.dead=true; break; } }
+      for(const p of people){ if(p.state!=='vagrant') continue; if(Math.abs(p.x-c.x)<14){ hire(p); SFX.coin(p.x,1.35,0.4); c.dead=true; break; } }
     }
-    if(!c.dead&&c.ground&&c.age>90&&purse<COIN_MAX&&Math.abs(c.x-pcx())<10){ purse++; c.dead=true; sparkle(c.x,c.y-4,'#ffe08a',4); }
+    if(!c.dead&&c.ground&&c.age>90&&purse<COIN_MAX&&Math.abs(c.x-pcx())<10){ purse++; SFX.coin(c.x,1.25,0.4); c.dead=true; sparkle(c.x,c.y-4,'#ffe08a',4); }
   }
   coins=coins.filter(c=>!c.dead);
 }
@@ -1149,14 +1150,14 @@ function stepWorker(p){
       if(!tr||trees.indexOf(tr)<0){ p.task='follow'; p.tree=null; break; }
       goal=tr.x*T+4-(p.x<tr.x*T+4?10:-10);
       if(Math.abs(p.x-goal)<2){ goal=null; p.face=tr.x*T+4>p.x?1:-1;
-        if(p.act===0){ p.act=R.chop; tr.hp--; tr.sh=8; spawnChips(tr.x*T+4,GY*T-12,'#7a5638',4); if(tr.hp<=0) fellTree(tr,p); } }
+        if(p.act===0){ p.act=R.chop; SFX.chop(tr.x*T+4); tr.hp--; tr.sh=8; spawnChips(tr.x*T+4,GY*T-12,'#7a5638',4); if(tr.hp<=0) fellTree(tr,p); } }
       break;
     }
     case 'wallfix':{
       const side=p.side===0?-1:1, max=BAL.wall.hp[walls.level]||0;
       goal=wallX(side)-side*8;
       if(Math.abs(p.x-goal)<3){ goal=null; p.face=side;
-        if(p.act===0){ p.act=24; spawnChips(wallX(side),GY*T-10-rnd()*12,'#c9a46a',2); }
+        if(p.act===0){ p.act=24; SFX.hammer(wallX(side)); spawnChips(wallX(side),GY*T-10-rnd()*12,'#c9a46a',2); }
         walls.hp[p.side]=Math.min(max,walls.hp[p.side]+max/1200);
         if(walls.hp[p.side]>=max) p.task='follow'; }
       break;
@@ -1166,7 +1167,7 @@ function stepWorker(p){
       if(!b||b.stage!=='building'){ p.task='follow'; break; }
       goal=b.x+(p.idx%4-1.5)*Math.min(14,b.w/4);
       if(Math.abs(p.x-goal)<2){ goal=null; p.face=b.x>p.x?1:-1;
-        if(p.act===0){ p.act=24; spawnChips(b.x+(rnd()-0.5)*b.w*0.5,GY*T-10-rnd()*30,'#c9a46a',2); }
+        if(p.act===0){ p.act=24; SFX.hammer(b.x); spawnChips(b.x+(rnd()-0.5)*b.w*0.5,GY*T-10-rnd()*30,'#c9a46a',2); }
         if(!isTimed(b)) b.progress+=R.build;
         if(b.progress>=1) finishBuilding(b); }
       break;
@@ -1294,6 +1295,7 @@ function findTarget(a,range,birdsToo){
   return best;
 }
 function shoot(a,tgt){
+  SFX.shot(a.x);
   const sx=a.x+a.face*4, sy=archerTop(a)-8;
   const r=tgt.ref;
   let tx=tgt.kind==='bird'?r.x+r.vx*20:(tgt.kind==='worker'?r.x:r.x), ty=tgt.kind==='bird'?r.y:GY*T-4-(tgt.kind==='worker'?10:tgt.kind==='bear'?8:0);
@@ -1308,7 +1310,7 @@ function updArrows(){
     ar.px=ar.x; ar.py=ar.y;
     ar.x=lerp(ar.sx,ar.tx,k); ar.y=lerp(ar.sy,ar.ty,k)-Math.sin(Math.PI*k)*ar.arc;
     if(k>=1){
-      ar.dead=true;
+      ar.dead=true; SFX.hit(ar.tx);
       const t=ar.tgt, r=t.ref;
       if(t.kind==='rabbit'&&!r.dead&&Math.abs(r.x-ar.tx)<8) killRabbit(r,ar.shooter);
       else if(t.kind==='bird'&&!r.dead&&Math.hypot(r.x-ar.tx,r.y-ar.ty)<10) killBird(r,ar.shooter);
@@ -1342,6 +1344,7 @@ function killBird(b,shooter){
   lootCoins(BAL.birdCoins,b.x,b.y,shooter);
 }
 function killWorker(w){
+  SFX.death(w.x);
   people.splice(people.indexOf(w),1);
   spawnChips(w.x,GY*T-12,'#5a5060',10);
   for(let i=0;i<w.stolen+(w.coin||0);i++) coinToPlayer(w.x,GY*T-14);     // лучник возвращает украденное
@@ -1369,6 +1372,7 @@ function stepRabbit(r){
   if(r.x<8||r.x>W*T-8){ r.x=clamp(r.x,8,W*T-8); r.home=r.x; }
 }
 function fellTree(tr,p){
+  SFX.treeFall(tr.x*T+4);
   trees.splice(trees.indexOf(tr),1);
   stumps.push(tr.x);
   fallen.push({x:tr.x,v:tr.v,t:0,dir:p.x<tr.x*T+4?1:-1});
@@ -1392,6 +1396,7 @@ function stepFisher(a){
   if(a.fishT%60===0){ const ch=Math.min(BAL.fisher.max,BAL.fisher.start+BAL.fisher.step*(a.fishT/60-1)); if(rnd()<ch) a.bite=36; }
 }
 function fishCaught(a){
+  SFX.splash(a.x);
   a.fishAnim=30; a.act=12;
   a.wageT^=1;
   if(a.wageT===1){ a.wage++; sparkle(a.x,GY*T-24,'#e8c050',3); }
@@ -1471,6 +1476,7 @@ function underUp(b){ return b!==buildings[0]&&buildings.some(o=>o.stage==='build
 function spawnBear(){
   const n=nextBear.count||0, side=rnd()<0.5?-1:1;
   const hp=Math.min(BAL.bear.hpMax,BAL.bear.hp+BAL.bear.hpStep*n);
+  SFX.growl(null,0.35);
   bear={x:side<0?14*T:(W-14)*T,side,face:-side,hp,max:hp,state:'go',hitT:0,walk:0,spookT:0,spookCD:0,prefer:null,deadT:0,swipe:0};
   nextBear={day:dayNum+BAL.bear.every[0]+Math.floor(rnd()*(BAL.bear.every[1]-BAL.bear.every[0]+1)),phase:0.25+rnd()*0.5,count:n+1};
 }
@@ -1479,6 +1485,7 @@ function bearTargets(){
   return done;
 }
 function ruinBuilding(b){
+  SFX.collapse(b.x);
   sparkle(b.x,GY*T-20,'#8a6a48',30); spawnChips(b.x,GY*T-10,'#6a4a2a',24);
   for(let i=buildings.length-1;i>=0;i--){ const o=buildings[i]; if(o.type.endsWith('up')&&o.of===b){ if(o.builder&&o.builder.dest===o) o.builder.task='follow'; buildings.splice(i,1); } }
   if(b===buildings[0]){ for(let i=buildings.length-1;i>=0;i--) if(buildings[i].type==='hallup') buildings.splice(i,1);
@@ -1511,12 +1518,12 @@ function stepBear(){
   }
   const B=bear, BB=BAL.bear;
   if(B.state==='dead'){ if(++B.deadT>150) bear=null; return; }
-  if(B.hp<=0){ B.state='dead'; lootCoins(BB.loot,B.x,GY*T-16,B.killer||null); sparkle(B.x,GY*T-14,'#ffe08a',16); return; }
+  if(B.hp<=0){ SFX.growl(B.x,0.9); SFX.death(B.x); B.state='dead'; lootCoins(BB.loot,B.x,GY*T-16,B.killer||null); sparkle(B.x,GY*T-14,'#ffe08a',16); return; }
   if(B.hitT>0) B.hitT--; if(B.swipe>0) B.swipe--; if(B.spookCD>0) B.spookCD--;
   let goal=null, speed=BB.speed;
   // лошадь пугает медведя: встаёт на дыбы, пятится — и идёт громить лагерь
   if(B.state!=='leave'&&B.spookT===0&&B.spookCD===0&&Math.abs(B.x-pcx())<BB.spook){
-    B.spookT=80; B.spookCD=360; B.face=pcx()>B.x?1:-1;
+    B.spookT=80; B.spookCD=360; B.face=pcx()>B.x?1:-1; SFX.snort(); SND.last.growl=0; SFX.growl(B.x,1);
     const camp=buildings.find(b=>b.type==='camp'&&b.stage==='done'); if(camp) B.prefer=camp;
   }
   if(B.spookT>0){ B.spookT--; B.x=clamp(B.x-B.face*(B.spookT<50?0.7:0),20,W*T-20); return; }
@@ -1530,7 +1537,7 @@ function stepBear(){
     for(const p of people){ if(p.hidden||p.tower) continue; const d=Math.abs(p.x-B.x); if(d<bd&&!wallBetween(B.x,p.x)){bd=d;prey=p;} }
     if(prey){
       goal=prey.x;
-      if(bd<9&&B.hitT===0){ B.hitT=BB.hitEvery; B.swipe=12; B.face=prey.x>B.x?1:-1; killByBear(prey); }
+      if(bd<9&&B.hitT===0){ B.hitT=BB.hitEvery; B.swipe=12; B.face=prey.x>B.x?1:-1; SFX.swipe(B.x); killByBear(prey); }
     } else {
       // цель — здание: сперва лагерь, если напуган лошадью; ратуша — последней
       let t=B.prefer&&B.prefer.stage==='done'?B.prefer:null;
@@ -1541,7 +1548,7 @@ function stepBear(){
         goal=t.type==='mill'?t.x-53:t.x;
         if(Math.abs(B.x-goal)<10&&!wallBetween(B.x,goal)){
           goal=null; B.face=t.x>B.x?1:-1;
-          if(B.hitT===0){ B.hitT=BB.hitEvery; B.swipe=12; if(t.bhp==null) t.bhp=t===buildings[0]?BB.hallHp:BB.bldHp; t.bhp-=1; spawnChips(t.x+(rnd()-0.5)*t.w*0.5,GY*T-6-rnd()*20,'#8a6a48',3);
+          if(B.hitT===0){ B.hitT=BB.hitEvery; B.swipe=12; SFX.smash(t.x); if(t.bhp==null) t.bhp=t===buildings[0]?BB.hallHp:BB.bldHp; t.bhp-=1; spawnChips(t.x+(rnd()-0.5)*t.w*0.5,GY*T-6-rnd()*20,'#8a6a48',3);
             if(t.bhp<=0){ ruinBuilding(t); if(t===buildings[0]) B.state='leave'; if(B.prefer===t) B.prefer=null; } }
         }
       }
@@ -1553,7 +1560,7 @@ function stepBear(){
         if(wallUp(side)&&(B.x-wx)*side>0&&(goal-wx)*side<0){
           goal=wx+side*9;
           if(Math.abs(B.x-goal)<3){ goal=null; B.face=-side;
-            if(B.hitT===0){ B.hitT=BB.hitEvery; B.swipe=12; const i=side<0?0:1; walls.hp[i]=Math.max(0,walls.hp[i]-BB.wallDmg); spawnChips(wx,GY*T-10,walls.level>1?'#7d8296':'#6a4a2a',3);
+            if(B.hitT===0){ B.hitT=BB.hitEvery; B.swipe=12; SFX.smash(wx); const i=side<0?0:1; walls.hp[i]=Math.max(0,walls.hp[i]-BB.wallDmg); spawnChips(wx,GY*T-10,walls.level>1?'#7d8296':'#6a4a2a',3);
               if(walls.hp[i]===0){ sparkle(wx,GY*T-16,'#8a6a48',24); spawnChips(wx,GY*T-10,'#6a4a2a',20); } } }
         }
       }
@@ -1642,6 +1649,164 @@ function drawBear(cx,base){
   if(B.state!=='dead'&&B.hp<B.max){ const top=base-h-6; ctx.fillStyle='#1a1018'; ctx.fillRect(sx-11,top,22,3); ctx.fillStyle='#c84a3a'; ctx.fillRect(sx-10,top+1,Math.round(20*B.hp/B.max),1); }
 }
 
+// ================= звук: всё синтезируется на лету (WebAudio), без файлов =================
+const SND={c:null,out:null,sfx:null,mus:null,amb:null,noise:null,wind:null,water:null,next:0,bar:0,step:0,mel:4,last:{}};
+function sndInit(){
+  if(SND.c){ if(SND.c.state!=='running') SND.c.resume().catch(()=>{}); return; }
+  try{ if(navigator.audioSession) navigator.audioSession.type='playback'; }catch(_){}
+  const A=window.AudioContext||window.webkitAudioContext; if(!A) return;
+  let c; try{ c=new A(); }catch(_){ return; }
+  SND.c=c;
+  const comp=c.createDynamicsCompressor(); comp.threshold.value=-14; comp.ratio.value=4; comp.connect(c.destination);
+  SND.out=c.createGain(); SND.out.gain.value=0.9; SND.out.connect(comp);
+  SND.sfx=c.createGain(); SND.sfx.gain.value=0.85; SND.sfx.connect(SND.out);
+  SND.mus=c.createGain(); SND.mus.gain.value=0.16; SND.mus.connect(SND.out);
+  SND.amb=c.createGain(); SND.amb.gain.value=0.5; SND.amb.connect(SND.out);
+  const len=c.sampleRate*2, buf=c.createBuffer(1,len,c.sampleRate), d=buf.getChannelData(0);
+  for(let i=0;i<len;i++) d[i]=Math.random()*2-1;
+  SND.noise=buf;
+  // ветер: шум через полосовой фильтр, громкость и тон медленно гуляют
+  const mkLoop=(type,f,q,g)=>{ const s=c.createBufferSource(); s.buffer=buf; s.loop=true; const fl=c.createBiquadFilter(); fl.type=type; fl.frequency.value=f; fl.Q.value=q; const gg=c.createGain(); gg.gain.value=g; s.connect(fl); fl.connect(gg); gg.connect(SND.amb); s.start(); return {s,fl,g:gg}; };
+  SND.wind=mkLoop('bandpass',500,0.7,0.0);
+  SND.water=mkLoop('lowpass',380,0.5,0.05);
+  SND.next=c.currentTime+0.3;
+  if(c.state!=='running') c.resume().catch(()=>{});
+}
+['pointerdown','touchend','keydown'].forEach(ev=>addEventListener(ev,sndInit,{capture:true,passive:true}));
+document.addEventListener('visibilitychange',()=>{ if(!SND.c) return; if(document.hidden) SND.c.suspend().catch(()=>{}); else SND.c.resume().catch(()=>{}); });
+const sOK=()=>SND.c&&SND.c.state==='running';
+// где звучит: тише с расстоянием, панорама по стороне
+function sAt(x,range=300){
+  if(x==null) return {v:1,pan:0};
+  const d=x-pcx(), k=clamp(1-Math.abs(d)/range,0,1);
+  return {v:k*k,pan:clamp(d/220,-0.9,0.9)};
+}
+function sDest(x,vol,range){
+  const p=sAt(x,range), v=vol*p.v; if(v<0.004) return null;
+  const c=SND.c, g=c.createGain(); g.gain.value=v;
+  if(c.createStereoPanner){ const pn=c.createStereoPanner(); pn.pan.value=p.pan; g.connect(pn); pn.connect(SND.sfx); } else g.connect(SND.sfx);
+  return g;
+}
+function sTone(dest,t,f0,f1,dur,type='sine',g0=0.5,att=0.003){
+  const c=SND.c, o=c.createOscillator(), g=c.createGain();
+  o.type=type; o.frequency.setValueAtTime(f0,t); if(f1!==f0) o.frequency.exponentialRampToValueAtTime(Math.max(20,f1),t+dur);
+  g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(g0,t+att); g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  o.connect(g); g.connect(dest); o.start(t); o.stop(t+dur+0.02);
+}
+function sNoise(dest,t,dur,type,f0,f1,q,g0,att=0.002){
+  const c=SND.c, s=c.createBufferSource(); s.buffer=SND.noise;
+  const fl=c.createBiquadFilter(); fl.type=type; fl.frequency.setValueAtTime(f0,t); if(f1!==f0) fl.frequency.exponentialRampToValueAtTime(Math.max(30,f1),t+dur); fl.Q.value=q;
+  const g=c.createGain(); g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(g0,t+att); g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  s.connect(fl); fl.connect(g); g.connect(dest); s.start(t,Math.random()*1.5); s.stop(t+dur+0.02);
+}
+// не чаще, чем раз в N секунд для одного ключа
+function sGap(key,sec){ const t=SND.c.currentTime; if(SND.last[key]&&t-SND.last[key]<sec) return false; SND.last[key]=t; return true; }
+const R_=(a,b)=>a+Math.random()*(b-a);
+const SFX={
+  hoof(vol){ if(!sOK()) return; const d=sDest(null,vol); if(!d) return; const t=SND.c.currentTime;
+    sTone(d,t,R_(95,120),55,0.09,'sine',0.7); sNoise(d,t,0.05,'bandpass',R_(1500,2200),900,1.2,0.35); sNoise(d,t+0.01,0.08,'lowpass',500,200,0.7,0.25); },
+  hammer(x){ if(!sOK()) return; const d=sDest(x,0.55,280); if(!d) return; const t=SND.c.currentTime;
+    sTone(d,t,R_(1100,1400),900,0.07,'square',0.12); sTone(d,t,R_(2600,3000),2400,0.12,'sine',0.12); sTone(d,t,190,120,0.08,'sine',0.5); sNoise(d,t,0.04,'highpass',3000,3000,0.7,0.2); },
+  chop(x){ if(!sOK()) return; const d=sDest(x,0.6,300); if(!d) return; const t=SND.c.currentTime;
+    sTone(d,t,R_(150,180),90,0.12,'triangle',0.6); sNoise(d,t,0.09,'bandpass',R_(700,900),400,1.5,0.5); },
+  treeFall(x){ if(!sOK()) return; const d=sDest(x,0.7,380); if(!d) return; const t=SND.c.currentTime;
+    sTone(d,t,320,140,0.7,'sawtooth',0.05,0.1); sNoise(d,t+0.55,1.0,'lowpass',900,120,0.7,0.7,0.01); sTone(d,t+0.6,70,40,0.4,'sine',0.7); },
+  shot(x){ if(!sOK()) return; const d=sDest(x,0.5,320); if(!d) return; const t=SND.c.currentTime;
+    sTone(d,t,R_(200,240),170,0.14,'triangle',0.35); sNoise(d,t,0.28,'bandpass',2600,700,2,0.25,0.02); },
+  hit(x){ if(!sOK()) return; const d=sDest(x,0.5,300); if(!d) return; const t=SND.c.currentTime;
+    sTone(d,t,260,120,0.06,'triangle',0.5); sNoise(d,t,0.05,'bandpass',1200,600,1,0.3); },
+  coin(x,pitch=1,vol=0.45){ if(!sOK()) return; const d=sDest(x,vol,320); if(!d) return; const t=SND.c.currentTime, f=R_(1900,2200)*pitch;
+    sTone(d,t,f,f,0.35,'sine',0.35); sTone(d,t,f*1.5,f*1.5,0.25,'sine',0.18); sTone(d,t+0.06,f*1.26,f*1.26,0.3,'sine',0.22); },
+  coinLand(x){ if(!sOK()) return; const d=sDest(x,0.25,260); if(!d) return; const t=SND.c.currentTime, f=R_(2400,3000);
+    sTone(d,t,f,f,0.12,'sine',0.3); sTone(d,t+0.05,f*1.1,f*1.1,0.08,'sine',0.15); },
+  chime(x,hi){ if(!sOK()) return; const d=sDest(x,0.5,420); if(!d) return; const t=SND.c.currentTime, b=hi?660:523;
+    [1,1.25,1.5,2].forEach((k,i)=>sTone(d,t+i*0.09,b*k,b*k,0.6,'triangle',0.3,0.01)); },
+  click(){ if(!sOK()) return; const d=sDest(null,0.35); const t=SND.c.currentTime; sTone(d,t,900,700,0.05,'square',0.12); sNoise(d,t,0.03,'highpass',2500,2500,0.7,0.15); },
+  growl(x,vol=0.8){ if(!sOK()||!sGap('growl',1.2)) return; const d=sDest(x,vol,520); if(!d) return; const t=SND.c.currentTime, f=R_(60,80), dur=R_(0.9,1.4);
+    const c=SND.c, o=c.createOscillator(), lf=c.createOscillator(), lg=c.createGain(), fl=c.createBiquadFilter(), g=c.createGain();
+    o.type='sawtooth'; o.frequency.setValueAtTime(f*1.3,t); o.frequency.exponentialRampToValueAtTime(f,t+dur);
+    lf.frequency.value=R_(14,22); lg.gain.value=f*0.25; lf.connect(lg); lg.connect(o.frequency);
+    fl.type='lowpass'; fl.frequency.value=520; fl.Q.value=3;
+    g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.7,t+0.12); g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+    o.connect(fl); fl.connect(g); g.connect(d); o.start(t); lf.start(t); o.stop(t+dur+0.05); lf.stop(t+dur+0.05);
+    sNoise(d,t,dur,'bandpass',350,200,2,0.25,0.1); },
+  swipe(x){ if(!sOK()) return; const d=sDest(x,0.6,320); if(!d) return; const t=SND.c.currentTime;
+    sNoise(d,t,0.18,'bandpass',600,1800,1.5,0.4,0.03); sTone(d,t+0.12,110,60,0.15,'sine',0.6); },
+  smash(x){ if(!sOK()) return; const d=sDest(x,0.6,360); if(!d) return; const t=SND.c.currentTime;
+    sTone(d,t,90,50,0.18,'sine',0.7); sNoise(d,t,0.15,'bandpass',R_(500,800),300,1.2,0.5); },
+  collapse(x){ if(!sOK()) return; const d=sDest(x,0.9,520); if(!d) return; const t=SND.c.currentTime;
+    sNoise(d,t,1.8,'lowpass',1200,100,0.7,0.8,0.02); for(let i=0;i<5;i++) sTone(d,t+i*0.17+R_(0,0.08),R_(60,110),40,0.3,'sine',0.6); },
+  death(x){ if(!sOK()) return; const d=sDest(x,0.55,320); if(!d) return; const t=SND.c.currentTime;
+    sTone(d,t,140,60,0.25,'sine',0.6); sNoise(d,t,0.2,'lowpass',700,200,0.7,0.4); },
+  baa(x){ if(!sOK()) return; const d=sDest(x,0.3,260); if(!d) return; const t=SND.c.currentTime, f=R_(330,420), dur=R_(0.4,0.6);
+    const c=SND.c, o=c.createOscillator(), lf=c.createOscillator(), lg=c.createGain(), fl=c.createBiquadFilter(), g=c.createGain();
+    o.type='sawtooth'; o.frequency.value=f; lf.frequency.value=7; lg.gain.value=f*0.04; lf.connect(lg); lg.connect(o.frequency);
+    fl.type='bandpass'; fl.frequency.value=1000; fl.Q.value=2;
+    g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.4,t+0.05); g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+    o.connect(fl); fl.connect(g); g.connect(d); o.start(t); lf.start(t); o.stop(t+dur+0.05); lf.stop(t+dur+0.05); },
+  chirp(x){ if(!sOK()) return; const d=sDest(x,0.18,420); if(!d) return; const t=SND.c.currentTime;
+    const n=2+Math.floor(Math.random()*3); for(let i=0;i<n;i++){ const f=R_(3000,4200); sTone(d,t+i*0.11,f,f*R_(1.1,1.4),0.07,'sine',0.3); } },
+  splash(x){ if(!sOK()) return; const d=sDest(x,0.4,300); if(!d) return; const t=SND.c.currentTime;
+    sNoise(d,t,0.35,'bandpass',1400,500,1,0.5,0.005); sTone(d,t+0.03,600,1200,0.08,'sine',0.15); },
+  reap(x){ if(!sOK()||!sGap('reap',0.33)) return; const d=sDest(x,0.3,260); if(!d) return; const t=SND.c.currentTime;
+    sNoise(d,t,0.2,'highpass',2500,5000,0.8,0.3,0.05); },
+  snort(){ if(!sOK()||!sGap('snort',2)) return; const d=sDest(null,0.45); const t=SND.c.currentTime;
+    sNoise(d,t,0.35,'bandpass',500,300,1.5,0.6,0.02); sNoise(d,t+0.18,0.3,'bandpass',420,260,1.5,0.4,0.02); },
+  crackle(x){ if(!sOK()) return; const d=sDest(x,0.22,200); if(!d) return; const t=SND.c.currentTime;
+    sNoise(d,t,0.025,'highpass',R_(2000,5000),2000,0.7,R_(0.2,0.5)); },
+};
+// ---- музыка: тихие аккорды и редкая щипковая мелодия; ночью реже и ниже, при медведе — барабан ----
+const PROG=[[57,60,64],[53,57,60],[48,52,55],[55,59,62]];
+const SCALE=[57,60,62,64,67,69,72,74,76];
+const mtof=m=>440*Math.pow(2,(m-69)/12);
+function musicBeat(t){
+  const beat=SND.step%8, bar=Math.floor(SND.step/8)%PROG.length, dk=darkness(), danger=bearAlert();
+  const M=SND.mus, c=SND.c;
+  if(beat===0){
+    const ch=PROG[bar];
+    for(const n of ch){ const o=c.createOscillator(), o2=c.createOscillator(), fl=c.createBiquadFilter(), g=c.createGain(), f=mtof(n-12);
+      o.type='triangle'; o2.type='sawtooth'; o.frequency.value=f; o2.frequency.value=f*1.004;
+      fl.type='lowpass'; fl.frequency.value=danger?500:700+300*(1-dk); fl.Q.value=0.5;
+      g.gain.setValueAtTime(0.0001,t); g.gain.linearRampToValueAtTime(0.11,t+1.2); g.gain.linearRampToValueAtTime(0.0001,t+4.6);
+      const g2=c.createGain(); g2.gain.value=0.25; o2.connect(g2); g2.connect(fl);
+      o.connect(fl); fl.connect(g); g.connect(M); o.start(t); o2.start(t); o.stop(t+4.8); o2.stop(t+4.8); }
+    sTone(M,t,mtof(PROG[bar][0]-24),mtof(PROG[bar][0]-24),3.2,'sine',0.35,0.3);
+  }
+  const density=danger?0.25:(0.55-0.3*dk);
+  if(beat%2===0&&Math.random()<density){
+    SND.mel=clamp(SND.mel+Math.floor(Math.random()*5)-2,0,SCALE.length-1);
+    const f=mtof(SCALE[SND.mel]-(dk>0.6?12:0));
+    sTone(M,t,f,f,1.1,'triangle',0.32,0.004); sTone(M,t,f*2,f*2,0.35,'sine',0.08,0.002);
+  }
+  if(danger&&(beat===0||beat===3||beat===4||beat===6)){ sTone(M,t,75,45,0.35,'sine',beat===0?0.9:0.55); sNoise(M,t,0.12,'lowpass',300,120,0.7,0.3); }
+  SND.step++;
+}
+// вызывается каждый кадр: музыка, ветер, вода, треск костров, голоса животных
+function sndTick(){
+  if(!sOK()) return;
+  const c=SND.c, now=c.currentTime, dk=darkness(), danger=bearAlert();
+  const spb=danger?0.42:0.6;
+  if(SND.next<now) SND.next=now+0.05;
+  while(SND.next<now+0.25){ musicBeat(SND.next); SND.next+=spb; }
+  const gust=0.5+0.5*Math.sin(now*0.23)*Math.sin(now*0.071+1), run=clamp(Math.abs(P.vx)/1.4,0,1);
+  SND.wind.g.gain.setTargetAtTime(0.06+0.1*gust+0.08*dk+0.12*run*run,now,0.4);
+  SND.wind.fl.frequency.setTargetAtTime(350+500*gust+600*run,now,0.5);
+  if(Math.random()<0.25){ for(const k of CAMPS) if(Math.abs(k.x*T-pcx())<220) SFX.crackle(k.x*T); }
+  if(Math.random()<0.004){ const out=sheep.filter(q=>q.state!=='in'&&Math.abs(q.x-pcx())<240); if(out.length) SFX.baa(out[Math.floor(Math.random()*out.length)].x); }
+  if(Math.random()<0.004&&dk<0.5){ SFX.chirp(pcx()+(Math.random()-0.5)*400); }
+  if(bear&&bear.state!=='dead'&&Math.random()<0.006) SFX.growl(bear.x,0.6);
+  if(moveBlend<0.1&&Math.random()<0.0008) SFX.snort();
+}
+// стук копыт: в момент, когда копыто касается земли
+let hoofPrev=0;
+function hoofTick(){
+  if(!P.onGround||moveBlend<0.25){ hoofPrev=walkT; return; }
+  let g='walk',bw=0; for(const k of GAITS) if(GW[k]>bw){bw=GW[k];g=k;}
+  const ph=RGAIT[g].ph, v=clamp(Math.abs(P.vx)/1.4,0,1);
+  for(let i=0;i<4;i++) if(Math.floor(hoofPrev-ph[i])!==Math.floor(walkT-ph[i])) SFX.hoof((0.25+0.55*v)*(RLEGS[i].far?0.8:1));
+  hoofPrev=walkT;
+}
+
 function isTimed(b){ return b.type.endsWith('up'); }
 function upKey(b){ return b.type==='hallup'?['hall',hall().level+1]:b.type==='wallup'?['wall',b.lvl]:[b.of.type,(b.of.level||1)+1]; }
 // прокачки идут по настоящим часам: старт — когда собраны все брёвна
@@ -1670,7 +1835,7 @@ function tickTimers(){
 }
 function finishBuilding(b){
   const wasRuin=!!b.ruin; b.ruin=false; b.bhp=null;
-  b.progress=1; b.stage='done'; sparkle(b.x,GY*T-40,'#ffe08a',30); for(const w of people) if(w.task==='build'&&w.dest===b) w.task='follow';
+  b.progress=1; b.stage='done'; SFX.chime(b.x,isTimed(b)); sparkle(b.x,GY*T-40,'#ffe08a',30); for(const w of people) if(w.task==='build'&&w.dest===b) w.task='follow';
   if(b.type==='hall'&&walls.level<1) setWallLevel(1);
   if(b.type==='wallup'){
     buildings.splice(buildings.indexOf(b),1);
@@ -1705,6 +1870,7 @@ function stepPhysics(){
   { let s=0; for(const k of GAITS) s+=GW[k]; for(const k of GAITS) GW[k]/=s; }
   let inv=0; for(const k of GAITS) inv+=GW[k]*2*RGAIT[k].stride/RGAIT[k].duty;
   if(P.onGround) walkT+=v/inv;
+  hoofTick();
   P.vy=Math.min(P.vy+0.3,5); moveY(P.vy);
   P.onGround=collides(P.x,P.y+0.5);
   const mv=(P.onGround&&v>0.03)?1:0;
@@ -2340,6 +2506,7 @@ function frame(now){
   acc+=dt; anim+=dt;
   while(acc>=1/60){ stepPhysics(); acc-=1/60; }
   render();
+  sndTick();
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
