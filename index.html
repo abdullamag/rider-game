@@ -512,7 +512,7 @@ function spawnRabbit(x){ rabbits.push({x,vx:0,y:0,vy:0,face:rnd()<0.5?-1:1,wait:
 
 // ---------- пиксельный шрифт для всплывающих чисел ----------
 const FONT={'0':'111101101101111','1':'010110010010111','2':'111001111100111','3':'111001111001111','4':'101101111001001',
-  '5':'111100111001111','6':'111100111101111','7':'111001001001001','8':'111101111101111','9':'111101111001111','+':'000010111010000'};
+  '5':'111100111001111','6':'111100111101111','7':'111001001001001','8':'111101111101111','9':'111101111001111','+':'000010111010000',':':'000010000010000'};
 function pxText(str,x,y,col){
   for(let pass=0;pass<2;pass++){
     ctx.fillStyle=pass?col:'rgba(20,12,24,0.85)';
@@ -2062,12 +2062,12 @@ function drawBuilding(b,cx,base){
     ctx.fillStyle='#6a4a2a'; for(const sx of [x-10,x,x+10]) ctx.fillRect(sx,base-30,2,30);
     ctx.fillRect(x-12,base-20,26,1); ctx.fillRect(x-12,base-10,26,1);
     if(b.stage==='blueprint') for(let i=0;i<b.need;i++){ const lx=x-Math.floor(b.need*5/2)+i*5, ly=base-38; ctx.fillStyle='#1a1018'; ctx.fillRect(lx-1,ly-1,6,4); ctx.fillStyle=i<b.wood?'#c79a62':'#4a3a3a'; ctx.fillRect(lx,ly,4,2); }
-    else { ctx.fillStyle='#1a1018'; ctx.fillRect(x-12,base-39,24,4); ctx.fillStyle='#bfe0ff'; ctx.fillRect(x-11,base-38,Math.round(22*b.progress),2); drawHourglass(x,base-57); drawUpTime(b,x,base-47); }
+    else drawUpBadge(b,x,base-40);
     return;
   }
   if(b.type.endsWith('up')&&b.type!=='wallup'){
     const S_=b.type==='hallup'?SPR.hall:SPR[b.of.type], hw=S_.width, hh=S_.height, x0=x-Math.floor(hw/2), y0=base-hh+1;
-    if(b.stage==='building'){ ctx.fillStyle='#1a1018'; ctx.fillRect(x-16,y0-35,32,4); ctx.fillStyle='#bfe0ff'; ctx.fillRect(x-15,y0-34,Math.round(30*b.progress),2); drawHourglass(x,y0-53); drawUpTime(b,x,y0-43); return; }
+    if(b.stage==='building'){ drawUpBadge(b,x,y0-14); return; }
     ctx.fillStyle='#6a4a2a';
     for(const sx of [x0-2,x0+Math.floor(hw/3),x0+Math.floor(hw*2/3),x0+hw]) ctx.fillRect(sx,y0+10,2,hh-10);
     ctx.fillRect(x0-3,y0+22,hw+6,1); ctx.fillRect(x0-3,y0+hh-14,hw+6,1);
@@ -2168,6 +2168,16 @@ function drawField(m,cx,base){
 function upRemain(b){ if(b.t0) return Math.max(0,b.tDur-(Date.now()-b.t0)); const [k,lv]=upKey(b); return (BAL.upTime[k]&&BAL.upTime[k][lv])||60e3; }
 function fmtTime(ms){ const s=Math.ceil(ms/1000), h=Math.floor(s/3600), m=Math.floor(s%3600/60), ss=s%60, two=v=>String(v).padStart(2,'0'); return h?h+':'+two(m)+':'+two(ss):m+':'+two(ss); }
 function drawUpTime(b,x,y){ const t=fmtTime(upRemain(b)); pxText(t,x-Math.floor(t.length*4/2)+1,y,b.t0?'#dff0ff':'#8a98b0'); }
+// плашка прокачки: песочные часы + оставшееся время + полоска; не уходит выше края экрана
+function drawUpBadge(b,x,y){
+  y=Math.max(18,Math.round(y));
+  const t=fmtTime(upRemain(b)), tw=t.length*4, w=tw+16, x0=x-Math.floor(w/2);
+  ctx.fillStyle='rgba(16,10,22,0.78)'; ctx.fillRect(x0-2,y-12,w+4,17);
+  ctx.fillStyle='rgba(191,224,255,0.35)'; ctx.fillRect(x0-2,y-12,w+4,1);
+  drawHourglass(x0+4,y-11);
+  pxText(t,x0+12,y-9,b.t0?'#e8f4ff':'#8a98b0');
+  ctx.fillStyle='#1a1018'; ctx.fillRect(x0,y,w,3); ctx.fillStyle='#bfe0ff'; ctx.fillRect(x0+1,y+1,Math.round((w-2)*b.progress),1);
+}
 function drawHourglass(x,y){
   const f=Math.floor(anim*1.5)%2, px=(a,b,w,h,c)=>{ ctx.fillStyle=c; ctx.fillRect(x+a,y+b,w,h); };
   px(-3,0,7,1,'#c79a62'); px(-3,8,7,1,'#c79a62');
